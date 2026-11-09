@@ -1,0 +1,628 @@
+/* Colores de toda la app, si quiero cambiar un color lo cambio aqui */
+:root {
+    --fondo-oscuro: #121212;
+    --fondo-panel: #1e1e1e;
+    --borde-panel: #333;
+    --texto-principal: #ffffff;
+    --texto-tenue: #a0a0a0;
+    --acento: #00adb5;
+    --acento-encima: #00d9e6;
+    --peligro: #ff2e63;
+    --peligro-encima: #ff5c8a;
+    --advertencia: #f8b500;
+    --info: #1976d2;
+    --exito: #4caf50;
+    --exito-encima: #66bb6a;
+    --secundario: #3a3a3a;
+    --secundario-encima: #4a4a4a;
+}
+
+/* Quita margenes raros que pone el navegador */
+* {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+}
+
+body {
+    background-color: var(--fondo-oscuro);
+    color: var(--texto-principal);
+    overflow: hidden;
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+}
+
+/* --- Barra de arriba --- */
+.barra-nav {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 12px 24px;
+    background-color: var(--fondo-panel);
+    border-bottom: 2px solid var(--acento);
+    flex-shrink: 0;
+}
+
+.barra-nav h2 {
+    font-size: 1.3rem;
+    font-weight: 600;
+}
+
+.barra-nav h2 span {
+    color: var(--texto-tenue);
+    font-size: 0.75em;
+    font-weight: 400;
+}
+
+.indicador-estado {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+/* Puntito de color que dice si esta conectado, vigilando, pausado... */
+.punto {
+    height: 10px;
+    width: 10px;
+    border-radius: 50%;
+    display: inline-block;
+    transition: all 0.3s ease;
+}
+
+.punto.desconectado { background-color: #666; box-shadow: none; }
+.punto.conectado { background-color: var(--exito); box-shadow: 0 0 8px var(--exito); }
+.punto.vigilando { background-color: var(--acento); box-shadow: 0 0 8px var(--acento); }
+.punto.pausado { background-color: var(--advertencia); box-shadow: 0 0 8px var(--advertencia); }
+.punto.error { background-color: var(--peligro); box-shadow: 0 0 8px var(--peligro); }
+
+.insignia {
+    font-size: 0.7rem;
+    padding: 2px 8px;
+    border-radius: 4px;
+    background: var(--secundario);
+    color: var(--texto-tenue);
+}
+
+/* --- Acomodo general: video a la izquierda, panel a la derecha --- */
+.contenedor {
+    display: grid;
+    grid-template-columns: 1fr 320px;
+    gap: 16px;
+    padding: 16px 24px;
+    flex: 1;
+    overflow: hidden;
+    min-height: 0;
+}
+
+.seccion-video {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    min-height: 0;
+}
+
+/* Cuadro negro donde se ve la camara */
+.contenedor-video {
+    flex: 1;
+    background-color: #000;
+    border-radius: 8px;
+    overflow: hidden;
+    position: relative;
+    border: 1px solid var(--borde-panel);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    min-height: 300px;
+}
+
+#imagenVideo {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    display: block;
+}
+
+.contenedor-video .espera-video {
+    position: absolute;
+    inset: 0;
+    z-index: 1;
+}
+
+/* Letreritos encima del video (camara y FPS) */
+.etiqueta-camara, .etiqueta-fps {
+    position: absolute;
+    background: rgba(0, 0, 0, 0.7);
+    padding: 6px 12px;
+    border-radius: 4px;
+    font-size: 0.8rem;
+    color: var(--acento);
+    font-family: monospace;
+}
+
+.etiqueta-camara { top: 12px; left: 12px; }
+.etiqueta-fps { top: 12px; right: 12px; }
+
+.controles {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+}
+
+/* --- Botones --- */
+.btn {
+    padding: 10px 18px;
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+    font-weight: 600;
+    font-size: 0.85rem;
+    transition: all 0.2s ease;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.btn-primario { background-color: var(--exito); color: white; }
+.btn-primario:hover:not(:disabled) { background-color: var(--exito-encima); }
+
+.btn-secundario { background-color: var(--secundario); color: white; }
+.btn-secundario:hover:not(:disabled) { background-color: var(--secundario-encima); }
+
+.btn-peligro { background-color: var(--peligro); color: white; }
+.btn-peligro:hover:not(:disabled) { background-color: var(--peligro-encima); }
+
+.btn-info { background-color: var(--info); color: white; }
+.btn-info:hover:not(:disabled) { background-color: #2196f3; }
+
+.btn-chico { padding: 6px 12px; font-size: 0.75rem; }
+
+/* --- Panel derecho con el estado y las alertas --- */
+.seccion-alertas {
+    background-color: var(--fondo-panel);
+    border-radius: 8px;
+    border: 1px solid var(--borde-panel);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+
+.encabezado-panel {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--borde-panel);
+}
+
+.encabezado-panel h3 {
+    font-size: 0.95rem;
+    font-weight: 600;
+}
+
+/* Cuadritos de Persona, Cerradura, Trepar, etc. */
+.rejilla-estado {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+    padding: 12px 16px;
+}
+
+.elemento-estado {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    padding: 8px;
+    background: var(--fondo-oscuro);
+    border-radius: 6px;
+    border: 1px solid var(--borde-panel);
+}
+
+.etiqueta-estado {
+    font-size: 0.65rem;
+    color: var(--texto-tenue);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.valor-estado {
+    font-size: 0.85rem;
+    font-weight: 600;
+    font-family: monospace;
+}
+
+/* Color del valor segun lo que pase */
+.valor-estado.ok { color: var(--exito); }
+.valor-estado.precaucion { color: var(--advertencia); }
+.valor-estado.alerta { color: var(--peligro); }
+.valor-estado.info { color: var(--acento); }
+.valor-estado.neutral { color: var(--texto-tenue); }
+
+/* Lista de alertas que van saliendo */
+.lista-alertas {
+    list-style: none;
+    overflow-y: auto;
+    flex: 1;
+    padding: 8px 12px;
+    min-height: 200px;
+}
+
+.elemento-alerta {
+    background-color: var(--fondo-oscuro);
+    padding: 10px 12px;
+    margin-bottom: 8px;
+    border-radius: 6px;
+    border-left: 3px solid var(--acento);
+    font-size: 0.75rem;
+    line-height: 1.4;
+    animation: deslizar 0.3s ease;
+}
+
+@keyframes deslizar {
+    from { opacity: 0; transform: translateX(-10px); }
+    to { opacity: 1; transform: translateX(0); }
+}
+
+.elemento-alerta .hora {
+    display: block;
+    color: var(--texto-tenue);
+    font-size: 0.65rem;
+    margin-bottom: 4px;
+}
+
+/* --- Ventanas emergentes (zonas, configuracion, cerrar) --- */
+.fondo-modal {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.8);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    z-index: 1000;
+    opacity: 0;
+    visibility: hidden;
+    transition: all 0.2s ease;
+}
+
+.fondo-modal.activo {
+    opacity: 1;
+    visibility: visible;
+}
+
+.modal {
+    background: var(--fondo-panel);
+    border: 1px solid var(--borde-panel);
+    border-radius: 10px;
+    width: 90%;
+    max-width: 500px;
+    max-height: 90vh;
+    display: flex;
+    flex-direction: column;
+    transform: scale(0.95);
+    transition: transform 0.2s ease;
+}
+
+.fondo-modal.activo .modal {
+    transform: scale(1);
+}
+
+.modal-grande { max-width: 1000px; width: 95%; }
+.modal-chico { max-width: 440px; }
+
+.nota-modal {
+    color: var(--texto-tenue);
+    font-size: 0.9rem;
+    margin-top: 8px;
+}
+
+.encabezado-modal {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 16px 20px;
+    border-bottom: 1px solid var(--borde-panel);
+}
+
+.encabezado-modal h3 { font-size: 1.1rem; }
+
+.cerrar-modal {
+    background: none;
+    border: none;
+    color: var(--texto-tenue);
+    font-size: 1.5rem;
+    cursor: pointer;
+    padding: 0;
+    line-height: 1;
+}
+
+.cerrar-modal:hover { color: var(--texto-principal); }
+
+.cuerpo-modal {
+    padding: 20px;
+    overflow-y: auto;
+}
+
+.pie-modal {
+    display: flex;
+    justify-content: flex-end;
+    gap: 10px;
+    padding: 16px 20px;
+    border-top: 1px solid var(--borde-panel);
+}
+
+/* --- Editor de zonas --- */
+.controles-zona {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+    margin-bottom: 12px;
+    align-items: center;
+}
+
+.controles-zona label { display: flex; align-items: center; gap: 6px; font-size: 0.85rem; }
+
+.controles-zona select,
+.controles-zona select:focus,
+.controles-zona select:hover {
+    padding: 6px 10px;
+    background: #f5f5f5 !important;
+    border: 1px solid var(--acento) !important;
+    border-radius: 4px;
+    color: #000000 !important;
+    font-weight: 600;
+}
+
+.controles-zona select option,
+.controles-zona select option:hover,
+.controles-zona select option:checked,
+.controles-zona select option:focus {
+    background: #ffffff !important;
+    color: #000000 !important;
+}
+
+.instrucciones-zona {
+    color: var(--texto-tenue);
+    font-size: 0.8rem;
+    margin-bottom: 12px;
+    padding: 8px;
+    background: var(--fondo-oscuro);
+    border-radius: 4px;
+}
+
+/* El lienzo donde se dibujan las zonas y la esquinita para hacerlo grande */
+#marcoLienzoZonas {
+    position: relative;
+    margin: 0 auto;
+    border: 1px solid var(--borde-panel);
+    border-radius: 4px;
+    background: #1a1a1a;
+    touch-action: none;
+}
+
+#lienzoZonas {
+    display: block;
+    width: 100%;
+    max-width: 100%;
+    height: auto;
+    border-radius: 4px;
+    background: #1a1a1a;
+    cursor: crosshair;
+}
+
+#agarraderaLienzo {
+    position: absolute;
+    right: 0;
+    bottom: 0;
+    width: 26px;
+    height: 26px;
+    cursor: se-resize;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 15px;
+    color: var(--acento);
+    background: rgba(0, 0, 0, 0.5);
+    border-top-left-radius: 10px;
+    border-bottom-right-radius: 4px;
+    border-top: 1px solid var(--borde-panel);
+    border-left: 1px solid var(--borde-panel);
+    user-select: none;
+    z-index: 5;
+    line-height: 1;
+}
+
+#agarraderaLienzo:hover {
+    background: rgba(0, 173, 181, 0.35);
+    color: #fff;
+}
+
+#agarraderaLienzo:active {
+    cursor: se-resize;
+}
+
+.etiqueta-tamano-zona {
+    text-align: center;
+    font-size: 0.75rem;
+    color: var(--texto-tenue);
+    margin-top: 8px;
+    font-family: monospace;
+    min-height: 1em;
+}
+
+/* Lista para escoger camara o video */
+.selector-camara {
+    width: 100%;
+    padding: 8px 10px;
+    background: #f5f5f5 !important;
+    border: 1px solid var(--acento) !important;
+    border-radius: 4px;
+    color: #000000 !important;
+    font-weight: 600;
+    font-size: 0.85rem;
+}
+
+.selector-camara option {
+    background: #ffffff !important;
+    color: #000000 !important;
+}
+
+.ayuda-camara {
+    display: block;
+    font-size: 0.75rem;
+    color: var(--texto-tenue);
+    margin-top: 4px;
+}
+
+/* --- Pestanas de la configuracion --- */
+.pestanas-config {
+    display: flex;
+    gap: 4px;
+    margin-bottom: 16px;
+    border-bottom: 1px solid var(--borde-panel);
+    padding-bottom: 4px;
+}
+
+.boton-pestana {
+    padding: 8px 16px;
+    background: none;
+    border: none;
+    color: var(--texto-tenue);
+    cursor: pointer;
+    border-radius: 4px 4px 0 0;
+    font-size: 0.8rem;
+    transition: all 0.2s;
+}
+
+.boton-pestana:hover { color: var(--texto-principal); background: var(--fondo-oscuro); }
+.boton-pestana.activo { color: var(--acento); background: var(--fondo-oscuro); border-bottom: 2px solid var(--acento); }
+
+.contenido-pestana { display: none; }
+.contenido-pestana.activo { display: block; animation: aparecer 0.2s; }
+
+@keyframes aparecer { from { opacity: 0; } to { opacity: 1; } }
+
+/* Cada campo del formulario */
+.grupo-form {
+    margin-bottom: 14px;
+}
+
+.grupo-form label {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    font-size: 0.85rem;
+}
+
+.grupo-form.casilla label { flex-direction: row; align-items: center; gap: 8px; }
+
+.grupo-form input,
+.grupo-form select,
+.grupo-form select:focus,
+.grupo-form select:hover {
+    padding: 8px 12px;
+    background: #f5f5f5 !important;
+    border: 1px solid var(--acento) !important;
+    border-radius: 4px;
+    color: #000000 !important;
+    font-size: 0.85rem;
+}
+
+.grupo-form select option,
+.grupo-form select option:hover,
+.grupo-form select option:checked,
+.grupo-form select option:focus {
+    background: #ffffff !important;
+    color: #000000 !important;
+}
+
+.grupo-form input:focus, .grupo-form select:focus {
+    outline: none;
+    border-color: var(--acento);
+}
+
+/* --- Avisos que salen abajo y se quitan solos --- */
+#contenedorAvisos {
+    position: fixed;
+    bottom: 20px;
+    right: 20px;
+    z-index: 2000;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.aviso {
+    padding: 12px 20px;
+    border-radius: 6px;
+    color: white;
+    font-size: 0.85rem;
+    animation: entrarDerecha 0.3s ease;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+}
+
+.aviso.exito { background: var(--exito); }
+.aviso.error { background: var(--peligro); }
+.aviso.info { background: var(--info); }
+.aviso.advertencia { background: var(--advertencia); color: #000; }
+
+@keyframes entrarDerecha {
+    from { opacity: 0; transform: translateX(100%); }
+    to { opacity: 1; transform: translateX(0); }
+}
+
+/* Si la ventana es angosta se pone todo en una columna */
+@media (max-width: 900px) {
+    .contenedor { grid-template-columns: 1fr; }
+    .seccion-alertas { max-height: 300px; }
+}
+/* --- App de pruebas: lo que solo se ve en la version de pruebas --- */
+.solo-pruebas { display: none; }
+body.pruebas .solo-pruebas { display: block; }
+body.pruebas span.solo-pruebas { display: inline-block; }
+body.pruebas .seccion-alertas { overflow-y: auto; }
+body.pruebas .lista-alertas { min-height: 120px; flex: none; }
+body.pruebas .barra-nav { border-bottom: 2px solid var(--advertencia); }
+
+.insignia-pruebas {
+    background: var(--advertencia);
+    color: #000;
+    font-weight: 700;
+}
+
+.metricas {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    padding: 10px 16px;
+}
+
+.metrica-fila {
+    display: flex;
+    justify-content: space-between;
+    font-size: 0.8rem;
+    padding: 4px 8px;
+    background: var(--fondo-oscuro);
+    border-radius: 4px;
+    border-left: 3px solid var(--borde-panel);
+}
+
+.metrica-fila b { font-family: monospace; color: var(--texto-tenue); }
+.metrica-fila.cumple { border-left-color: var(--exito); }
+.metrica-fila.cumple b { color: var(--exito); }
+.metrica-fila.no-cumple b { color: var(--texto-principal); }
+
+.metricas-t { font-family: monospace; font-size: 0.8rem; color: var(--texto-tenue); }
+
+.registro-archivo {
+    display: block;
+    padding: 6px 16px 0;
+    font-size: 0.65rem;
+    color: var(--texto-tenue);
+    word-break: break-all;
+}
+
+.eventos-pruebas { max-height: 180px; }
+.eventos-pruebas li { font-size: 0.75rem; }

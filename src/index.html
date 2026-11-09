@@ -1,0 +1,279 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SafeHome - Videovigilancia Inteligente</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <!-- Barra de arriba: nombre, si esta conectado y el modo -->
+    <nav class="barra-nav">
+        <div class="logo">
+            <h2>🛡️ SafeHome <span>| Casa Hogar</span></h2>
+        </div>
+        <div class="indicador-estado">
+            <span class="punto" id="puntoEstado"></span>
+            <span id="textoEstado">Desconectado</span>
+            <span class="insignia" id="insigniaModo">Modo: —</span>
+            <span class="insignia insignia-pruebas solo-pruebas">PRUEBAS</span>
+        </div>
+    </nav>
+
+    <main class="contenedor">
+        <!-- Lado izquierdo: el video en vivo y los botones -->
+        <section class="seccion-video">
+            <div class="contenedor-video">
+                <img id="imagenVideo" src="" alt="Cámara en vivo">
+                <div class="etiqueta-camara" id="etiquetaCamara">Cámara: Desconectada</div>
+                <div class="etiqueta-fps" id="etiquetaFps">FPS: —</div>
+            </div>
+            
+            <!-- Botones para iniciar, pausar, detener y abrir zonas/config -->
+            <div class="controles">
+                <button id="btnIniciar" class="btn btn-primario">▶ Iniciar</button>
+                <button id="btnPausar" class="btn btn-secundario" disabled>⏸ Pausar</button>
+                <button id="btnDetener" class="btn btn-peligro" disabled>⏹ Detener</button>
+                <button id="btnZonas" class="btn btn-info">▦ Zonas</button>
+                <button id="btnZonasEnVideo" class="btn btn-secundario">Ocultar zonas en video</button>
+                <button id="btnConfiguracion" class="btn btn-secundario">⚙ Config</button>
+            </div>
+        </section>
+
+        <!-- Lado derecho: que esta detectando y la lista de alertas -->
+        <aside class="seccion-alertas">
+            <div class="encabezado-panel">
+                <h3>⚠️ Estado de Detección</h3>
+                <button id="btnLimpiarRegistro" class="btn btn-chico btn-secundario">Limpiar</button>
+            </div>
+            <div class="rejilla-estado" id="rejillaEstado">
+                <div class="elemento-estado">
+                    <span class="etiqueta-estado">Persona</span>
+                    <span class="valor-estado" id="estPersona">—</span>
+                </div>
+                <div class="elemento-estado">
+                    <span class="etiqueta-estado">Cerradura</span>
+                    <span class="valor-estado" id="estCerradura">—</span>
+                </div>
+                <div class="elemento-estado">
+                    <span class="etiqueta-estado">Escalamiento</span>
+                    <span class="valor-estado" id="estTrepar">—</span>
+                </div>
+                <div class="elemento-estado">
+                    <span class="etiqueta-estado">Empujón</span>
+                    <span class="valor-estado" id="estEmpujon">—</span>
+                </div>
+                <div class="elemento-estado">
+                    <span class="etiqueta-estado">Mirando</span>
+                    <span class="valor-estado" id="estMirando">—</span>
+                </div>
+                <div class="elemento-estado">
+                    <span class="etiqueta-estado">Movimiento</span>
+                    <span class="valor-estado" id="estMovimiento">—</span>
+                </div>
+                <div class="elemento-estado">
+                    <span class="etiqueta-estado">Tiempo</span>
+                    <span class="valor-estado" id="estTiempo">—</span>
+                </div>
+            </div>
+            
+            <!-- Esto solo sale en la app de pruebas (metricas y registro) -->
+            <div class="solo-pruebas">
+                <div class="encabezado-panel">
+                    <h3>🧪 Métricas de trepar</h3>
+                    <span class="metricas-t" id="metricasTiempo"></span>
+                </div>
+                <div class="metricas" id="metricasTrepar">
+                    <div class="metrica-fila" id="mtCadera"><span>Sube cadera</span><b>—</b></div>
+                    <div class="metrica-fila" id="mtPies"><span>Suben pies</span><b>—</b></div>
+                    <div class="metrica-fila" id="mtManos"><span>Manos sobre cadera</span><b>—</b></div>
+                    <div class="metrica-fila" id="mtPuerta"><span>Cerca de la puerta</span><b>—</b></div>
+                    <div class="metrica-fila" id="mtConfirmaciones"><span>Confirmaciones</span><b>—</b></div>
+                </div>
+                <div class="encabezado-panel">
+                    <h3>🧪 Métricas de mirar alrededor</h3>
+                </div>
+                <div class="metricas">
+                    <div class="metrica-fila" id="mmPuerta"><span>Junto a la puerta</span><b>—</b></div>
+                    <div class="metrica-fila" id="mmPermanencia"><span>Tiempo ahí</span><b>—</b></div>
+                    <div class="metrica-fila" id="mmQuieto"><span>Desplazamiento</span><b>—</b></div>
+                    <div class="metrica-fila" id="mmGiros"><span>Giros de cabeza</span><b>—</b></div>
+                </div>
+                <div class="encabezado-panel">
+                    <h3>🗒 Registro de eventos</h3>
+                </div>
+                <small class="registro-archivo" id="registroArchivo"></small>
+                <ul class="lista-alertas eventos-pruebas" id="eventosPruebas"></ul>
+            </div>
+
+            <div class="encabezado-panel">
+                <h3>📋 Registro de Alertas</h3>
+            </div>
+            <ul class="lista-alertas" id="listaAlertas"></ul>
+        </aside>
+    </main>
+
+    <!-- Ventana para dibujar las zonas (ROI, cerraduras y puertas) -->
+    <div class="fondo-modal" id="modalZonas">
+        <div class="modal modal-grande">
+            <div class="encabezado-modal">
+                <h3>▦ Editor de Zonas</h3>
+                <button class="cerrar-modal" id="cerrarZonas">×</button>
+            </div>
+            <div class="cuerpo-modal">
+                <div class="controles-zona">
+                    <label>Tipo: <select id="tipoZona">
+                        <option value="ROI">ROI (Zona de interés)</option>
+                        <option value="CERRADURA">Cerradura</option>
+                        <option value="PUERTA">Puerta</option>
+                    </select></label>
+                    <button class="btn btn-chico btn-primario" id="btnAgregarZona">Agregar zona</button>
+                    <button class="btn btn-chico btn-peligro" id="btnBorrarZona">Eliminar última</button>
+                    <button class="btn btn-chico btn-secundario" id="btnLimpiarZonas">Limpiar todas</button>
+                    <button class="btn btn-chico btn-secundario" id="btnVerZonas">Ocultar zonas</button>
+                    <button class="btn btn-chico btn-secundario" id="btnRefrescarZonas">Refrescar</button>
+                </div>
+                <p class="instrucciones-zona">Instrucciones: Selecciona el tipo y haz clic y arrastra en la imagen para dibujar. Arrastra la esquina ▼ del canvas para cambiar su tamaño.</p>
+                <div id="marcoLienzoZonas">
+                    <canvas id="lienzoZonas"></canvas>
+                    <div id="agarraderaLienzo" title="Arrastra para redimensionar">⤡</div>
+                </div>
+                <div class="etiqueta-tamano-zona" id="etiquetaTamanoZona"></div>
+            </div>
+            <div class="pie-modal">
+                <button class="btn btn-secundario" id="cancelarZonas">Cancelar</button>
+                <button class="btn btn-primario" id="guardarZonas">Guardar</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Ventana de configuracion, separada por pestanas -->
+    <div class="fondo-modal" id="modalConfiguracion">
+        <div class="modal">
+            <div class="encabezado-modal">
+                <h3>⚙ Configuración</h3>
+                <button class="cerrar-modal" id="cerrarConfiguracion">×</button>
+            </div>
+            <div class="cuerpo-modal">
+                <div class="pestanas-config">
+                    <button class="boton-pestana activo" data-pestana="pestana-umbrales">Umbrales</button>
+                    <button class="boton-pestana" data-pestana="pestana-rendimiento">Rendimiento</button>
+                    <button class="boton-pestana" data-pestana="pestana-correo">Email</button>
+                    <button class="boton-pestana" data-pestana="pestana-camara">Cámara</button>
+                </div>
+                
+                <div class="contenido-pestana activo" id="pestana-umbrales">
+                    <div class="grupo-form">
+                        <label>Forzar cerradura (s): <input type="number" step="0.5" min="0.5" max="30" id="cfgTiempoCerradura"></label>
+                    </div>
+                    <div class="grupo-form">
+                        <label>Mirar alrededor, ventana (s): <input type="number" step="1" min="1" max="30" id="cfgVentanaMirar"></label>
+                    </div>
+                    <div class="grupo-form">
+                        <label>Giros para "mirar alrededor": <input type="number" step="1" min="1" max="20" id="cfgGirosMirar"></label>
+                    </div>
+                    <div class="grupo-form">
+                        <label>Empujón sostenido (s): <input type="number" step="0.5" min="0.5" max="30" id="cfgTiempoEmpujon"></label>
+                    </div>
+                    <div class="grupo-form">
+                        <label>Tiempo detección (s): <input type="number" step="0.5" min="0.5" max="30" id="cfgTiempoDeteccion"></label>
+                    </div>
+                </div>
+                
+                <div class="contenido-pestana" id="pestana-rendimiento">
+                    <div class="grupo-form">
+                        <label>Saltar frames video: <input type="number" min="1" max="30" id="cfgSaltoVideo"></label>
+                    </div>
+                    <div class="grupo-form">
+                        <label>Saltar frames pose: <input type="number" min="1" max="30" id="cfgSaltoPose"></label>
+                    </div>
+                    <div class="grupo-form">
+                        <label>Modo detección: 
+                            <select id="cfgModo">
+                                <option value="hog">Solo HOG (rápido)</option>
+                                <option value="cascada">HOG + YOLO-pose (completo)</option>
+                            </select>
+                        </label>
+                    </div>
+                    <div class="grupo-form casilla">
+                        <label><input type="checkbox" id="cfgGuardarImagenes"> Guardar imágenes</label>
+                    </div>
+                    <div class="grupo-form">
+                        <label>Cooldown alertas (s): <input type="number" min="1" max="300" id="cfgEsperaAlertas"></label>
+                    </div>
+                </div>
+                
+                <div class="contenido-pestana" id="pestana-correo">
+                    <div class="grupo-form">
+                        <label>Usuario: <input type="email" id="cfgCorreoUsuario"></label>
+                    </div>
+                    <div class="grupo-form">
+                        <label>Contraseña app: <input type="password" id="cfgCorreoContrasena"></label>
+                    </div>
+                    <div class="grupo-form">
+                        <label>Destinatario: <input type="email" id="cfgCorreoDestino"></label>
+                    </div>
+                    <div class="grupo-form">
+                        <label>Servidor SMTP: <input type="text" id="cfgCorreoServidor"></label>
+                    </div>
+                    <div class="grupo-form">
+                        <label>Puerto: <input type="number" id="cfgCorreoPuerto"></label>
+                    </div>
+                </div>
+                
+                <div class="contenido-pestana" id="pestana-camara">
+                    <div class="grupo-form">
+                        <label>Fuente de vídeo:</label>
+                        <select id="cfgFuenteCamara" class="selector-camara">
+                            <option value="">-- Selecciona/cargando cámaras... --</option>
+                        </select>
+                        <small class="ayuda-camara" id="estadoEscaneo">Esperando lectura del backend...</small>
+                    </div>
+                    <div class="grupo-form">
+                        <label>O ruta/archivo de vídeo: <input type="text" id="cfgRutaVideo" placeholder="videos/video1.mp4 o /ruta/absoluta/video.mp4"></label>
+                        <small class="ayuda-camara">Si quieres usar un vídeo, escríbelo aquí o pulsa "Listar vídeos del backend". Solo se usa cuando lo defines explícitamente.</small>
+                    </div>
+                    <div class="grupo-form">
+                        <label>Ancho: <input type="number" id="cfgAncho"></label>
+                    </div>
+                    <div class="grupo-form">
+                        <label>Alto: <input type="number" id="cfgAlto"></label>
+                    </div>
+                    <button class="btn btn-secundario" id="btnRedetectarCamaras">⟳ Re-detectar cámaras</button>
+                    <button class="btn btn-secundario" id="btnListarVideos">🎞 Listar vídeos del backend</button>
+                    <button class="btn btn-secundario" id="btnProbarFuente">Probar cámara/fuente</button>
+                </div>
+            </div>
+            <div class="pie-modal">
+                <button class="btn btn-secundario" id="cancelarConfiguracion">Cancelar</button>
+                <button class="btn btn-primario" id="guardarConfiguracion">Guardar</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Pregunta si cerrar solo la ventana o todo el servicio -->
+    <div class="fondo-modal" id="modalCerrar">
+        <div class="modal modal-chico">
+            <div class="encabezado-modal">
+                <h3>Cerrar SafeHome</h3>
+                <button class="cerrar-modal" id="cerrarDialogoCerrar" title="Cancelar">×</button>
+            </div>
+            <div class="cuerpo-modal">
+                <p>¿Qué quieres cerrar?</p>
+                <p class="nota-modal">Si cierras solo la ventana, la vigilancia sigue activa en segundo plano y puedes volver desde el icono de la bandeja.</p>
+            </div>
+            <div class="pie-modal">
+                <button class="btn btn-secundario" id="btnCancelarCierre">Cancelar</button>
+                <button class="btn btn-secundario" id="btnSoloVentana">Solo la ventana</button>
+                <button class="btn btn-peligro" id="btnTodoServicio">Todo el servicio</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Aqui salen los avisos chiquitos de abajo -->
+    <div id="contenedorAvisos"></div>
+
+    <!-- Toda la logica del panel -->
+    <script src="main.js"></script>
+</body>
+</html>

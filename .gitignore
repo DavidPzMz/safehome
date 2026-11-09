@@ -1,0 +1,36 @@
+# Dependencias reinstalables desde los manifiestos
+node_modules/
+.venv/
+venv/
+
+# Artefactos de compilacion
+src-tauri/target/
+dist/
+build/
+
+# Copia del backend que se arma para empaquetar la aplicacion
+src-tauri/python-backend/
+
+# Cache de Python
+__pycache__/
+*.py[cod]
+
+# Salidas generadas en tiempo de ejecucion
+python-backend/logs/
+python-backend/evidencias/
+python-backend/evidences/
+*.log
+
+# Credenciales: nunca deben entrar al repositorio
+.env
+config.local.json
+
+# Sistema operativo y editores
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+# Archivos pesados o privados que no van al repositorio
+*.pt
+python-backend/videos/
+evaluacion/
