@@ -190,7 +190,12 @@ async function llamarServidor(ruta, opciones = {}) {
         headers: { 'Content-Type': 'application/json' },
         ...opciones,
     });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    if (!res.ok) {
+        // si el servidor explica el error (detail) se muestra ese texto
+        let detalle = `HTTP ${res.status}`;
+        try { const d = await res.json(); if (d && typeof d.detail === 'string') detalle = d.detail; } catch (e) {}
+        throw new Error(detalle);
+    }
     return res.json();
 }
 
@@ -789,6 +794,7 @@ function prepararControles() {
         }
         await cargarConfiguracion();
         await cargarCamaras();
+        if (modoApp !== 'pruebas') await cargarCorreo();
         abrirVentana('modalConfiguracion');
     };
 
@@ -799,6 +805,7 @@ function prepararControles() {
     };
     $('cerrarConfiguracion').onclick = () => cerrarVentana('modalConfiguracion');
     $('cancelarConfiguracion').onclick = () => cerrarVentana('modalConfiguracion');
+    prepararCorreo();
 
     $('guardarZonas').onclick = async () => {
         try {
@@ -869,6 +876,107 @@ function prepararControles() {
         await cargarVideos();
         mostrarAviso('Vídeos del servidor listados', 'exito');
     };
+}
+
+// --- Correo de alertas (app final): se verifica con un codigo de 4 digitos ---
+// vistas: 'guardado' (correo ya verificado), 'actual' (confirmar el actual
+// antes de cambiarlo) y 'nuevo' (escribir y verificar el correo nuevo)
+let correoInfo = { correo: '', verificado: false, remitente_listo: true };
+
+function mensajeCorreo(texto, esError = false) {
+    $('mensajeCorreo').textContent = texto;
+    $('mensajeCorreo').className = 'nota-modal' + (esError ? ' error' : '');
+}
+
+function mostrarVistaCorreo(vista) {
+    const hayVerificado = correoInfo.verificado;
+    $('vistaCorreoGuardado').style.display = vista === 'guardado' ? '' : 'none';
+    $('pasoCorreoActual').style.display = vista === 'actual' ? '' : 'none';
+    $('pasoCorreoNuevo').style.display = vista === 'nuevo' ? '' : 'none';
+    // cancelar solo tiene sentido si ya habia un correo verificado
+    $('btnCancelarCorreo').style.display = vista !== 'guardado' && hayVerificado ? '' : 'none';
+    // el cuadro del codigo sale hasta que se manda el codigo
+    $('filaCodigoActual').style.display = 'none';
+    $('filaCodigoNuevo').style.display = 'none';
+    $('codigoActual').value = '';
+    $('codigoNuevo').value = '';
+    if (vista === 'actual') $('correoActualPaso').textContent = correoInfo.correo;
+    if (vista === 'nuevo') $('correoNuevo').value = hayVerificado ? '' : correoInfo.correo;
+}
+
+async function cargarCorreo() {
+    try {
+        correoInfo = await llamarServidor('/correo');
+    } catch (e) {
+        mensajeCorreo('No se pudo leer el correo: ' + e.message, true);
+        return;
+    }
+    $('textoCorreoGuardado').textContent = correoInfo.correo;
+    $('insigniaCorreo').textContent = '✅ Verificado';
+    $('insigniaCorreo').className = 'insignia-ok';
+    mostrarVistaCorreo(correoInfo.verificado ? 'guardado' : 'nuevo');
+    if (!correoInfo.remitente_listo) {
+        mensajeCorreo('Esta instalación no tiene configurada la cuenta que envía los correos.', true);
+    } else if (!correoInfo.verificado) {
+        mensajeCorreo(correoInfo.correo ? 'Este correo aún no está verificado: pulsa Verificar.'
+                                        : 'Escribe tu correo y pulsa Verificar para recibir las alertas.');
+    } else {
+        mensajeCorreo('');
+    }
+}
+
+// pide al servidor que mande un codigo (deshabilita el boton mientras tanto)
+async function pedirCodigo(boton, paso, correo, fila, campo) {
+    boton.disabled = true;
+    mensajeCorreo('Enviando código...');
+    try {
+        const r = await llamarServidor('/correo/codigo', { method: 'POST', body: JSON.stringify({ paso, correo }) });
+        fila.style.display = '';
+        campo.value = '';
+        campo.focus();
+        mensajeCorreo(`Te mandamos un código de 4 dígitos a ${r.correo}. Revisa también la carpeta de spam.`);
+    } catch (e) {
+        mensajeCorreo(e.message, true);
+    } finally {
+        boton.disabled = false;
+    }
+}
+
+async function confirmarCodigo(paso, campo) {
+    const codigo = campo.value.trim();
+    if (!/^\d{4}$/.test(codigo)) { mensajeCorreo('El código tiene 4 números', true); return; }
+    try {
+        const r = await llamarServidor('/correo/confirmar', { method: 'POST', body: JSON.stringify({ paso, codigo }) });
+        if (paso === 'actual') {
+            mostrarVistaCorreo('nuevo');
+            mensajeCorreo('Listo, eres tú. Ahora escribe el correo nuevo y pulsa Verificar.');
+        } else {
+            await cargarCorreo();
+            mensajeCorreo(`Correo verificado: las alertas llegarán a ${r.correo}`);
+            mostrarAviso('Correo verificado', 'exito');
+        }
+    } catch (e) {
+        mensajeCorreo(e.message, true);
+    }
+}
+
+function prepararCorreo() {
+    $('btnCambiarCorreo').onclick = () => { mostrarVistaCorreo('actual'); mensajeCorreo(''); };
+    $('btnCodigoActual').onclick = () =>
+        pedirCodigo($('btnCodigoActual'), 'actual', null, $('filaCodigoActual'), $('codigoActual'));
+    $('btnConfirmarActual').onclick = () => confirmarCodigo('actual', $('codigoActual'));
+    $('btnVerificarNuevo').onclick = () =>
+        pedirCodigo($('btnVerificarNuevo'), 'nuevo', $('correoNuevo').value.trim(), $('filaCodigoNuevo'), $('codigoNuevo'));
+    $('btnConfirmarNuevo').onclick = () => confirmarCodigo('nuevo', $('codigoNuevo'));
+    $('btnCancelarCorreo').onclick = async () => {
+        try { await llamarServidor('/correo/cancelar', { method: 'POST' }); } catch (e) {}
+        mostrarVistaCorreo('guardado');
+        mensajeCorreo('');
+    };
+    // Enter en el cuadro del codigo = Confirmar
+    $('codigoActual').onkeydown = (e) => { if (e.key === 'Enter') $('btnConfirmarActual').click(); };
+    $('codigoNuevo').onkeydown = (e) => { if (e.key === 'Enter') $('btnConfirmarNuevo').click(); };
+    $('correoNuevo').onkeydown = (e) => { if (e.key === 'Enter') $('btnVerificarNuevo').click(); };
 }
 
 // pide una imagen nueva al servidor cada 40 ms y la pone en pantalla

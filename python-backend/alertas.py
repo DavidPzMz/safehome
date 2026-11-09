@@ -9,12 +9,13 @@ from datetime import datetime
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from email.mime.image import MIMEImage
+from email.header import Header
 
 import cv2
 
 # los datos del correo se leen de config cada vez que se usan
 import config as _cfg
-from gestor_config import CARPETA_CONFIG
+from gestor_config import CARPETA_CONFIG, MODO_PRUEBAS
 
 # historial de alertas: se guarda en la carpeta del usuario para que no se pierda
 CARPETA_HISTORIAL = os.path.join(CARPETA_CONFIG, "alertas")
@@ -106,9 +107,51 @@ def _explicar_error(e):
 
 
 def _contrasena_correo():
-    # la del panel (config.json) y si esta vacia la de la variable de entorno
+    # la de remitente.json y si esta vacia la de la variable de entorno
     return (getattr(_cfg, "CORREO_CONTRASENA", "") or
             os.environ.get("VIGILANCIA_CORREO_CONTRASENA", ""))
+
+
+def remitente_listo():
+    # True si esta configurada la cuenta que manda los correos
+    return bool(getattr(_cfg, "CORREO_USUARIO", "") and _contrasena_correo())
+
+
+def _mandar(mensaje):
+    # se conecta al servidor de correo (con conexion segura) y manda el mensaje
+    usuario = getattr(_cfg, "CORREO_USUARIO", "")
+    servidor_smtp = getattr(_cfg, "CORREO_SERVIDOR_SMTP", "") or "smtp.gmail.com"  # vacio = Gmail
+    puerto = int(getattr(_cfg, "CORREO_PUERTO_SMTP", 465) or 465)
+    contexto = ssl.create_default_context()
+    if puerto == 465:
+        servidor = smtplib.SMTP_SSL(servidor_smtp, puerto, context=contexto, timeout=20)
+    else:
+        servidor = smtplib.SMTP(servidor_smtp, puerto, timeout=20)
+        servidor.starttls(context=contexto)
+    try:
+        servidor.login(usuario, _contrasena_correo())
+        mensaje["From"] = usuario
+        servidor.send_message(mensaje)
+    finally:
+        try:
+            servidor.quit()
+        except Exception:
+            pass
+
+
+def enviar_codigo(destinatario, codigo):
+    # manda el codigo de verificacion; si falla lanza RuntimeError con el motivo
+    if not remitente_listo():
+        raise RuntimeError("La app no tiene configurada la cuenta que envía los correos")
+    mensaje = MIMEText(
+        f"Tu código de verificación de SafeHome es: {codigo}\n\n"
+        "Vence en 10 minutos. Si no lo pediste, ignora este correo.", "plain", "utf-8")
+    mensaje["To"] = destinatario
+    mensaje["Subject"] = Header(f"SafeHome - código de verificación {codigo}", "utf-8")
+    try:
+        _mandar(mensaje)
+    except Exception as e:
+        raise RuntimeError(_explicar_error(e)) from e
 
 
 class SistemaAlertas:
@@ -131,19 +174,18 @@ class SistemaAlertas:
 
     def enviar_correo(self, id_alerta, ruta_imagen):
         # arma el correo con la foto adjunta y lo manda en otro hilo
-        usuario = getattr(_cfg, "CORREO_USUARIO", "")
-        contrasena = _contrasena_correo()
         destinatario = getattr(_cfg, "CORREO_DESTINATARIO", "")
-        servidor_smtp = getattr(_cfg, "CORREO_SERVIDOR_SMTP", "") or "smtp.gmail.com"  # vacio = Gmail
-        puerto = int(getattr(_cfg, "CORREO_PUERTO_SMTP", 465) or 465)
-        if not usuario or not contrasena or not destinatario:
+        if not remitente_listo() or not destinatario:
             print("⚠️ Correo no configurado. Revisar la configuracion")
             _actualizar_correo(id_alerta, "sin_configurar", "Falta configurar el correo")
+            return
+        # en la app final solo se manda al correo que se comprobo con el codigo
+        if not MODO_PRUEBAS and destinatario != getattr(_cfg, "CORREO_VERIFICADO", ""):
+            _actualizar_correo(id_alerta, "sin_configurar", "El correo no está verificado")
             return
 
         try:
             mensaje = MIMEMultipart()
-            mensaje["From"] = usuario
             mensaje["To"] = destinatario
 
             # lista de lo que se detecto, una linea por tipo
@@ -166,16 +208,7 @@ class SistemaAlertas:
         def mandar_en_segundo_plano():
             # se manda aparte para que la deteccion no se trabe esperando al correo
             try:
-                # conexion segura que revisa el certificado del servidor
-                contexto = ssl.create_default_context()
-                if puerto == 465:
-                    servidor = smtplib.SMTP_SSL(servidor_smtp, puerto, context=contexto, timeout=20)
-                else:
-                    servidor = smtplib.SMTP(servidor_smtp, puerto, timeout=20)
-                    servidor.starttls(context=contexto)
-                servidor.login(usuario, contrasena)
-                servidor.send_message(mensaje)
-                servidor.quit()
+                _mandar(mensaje)
                 print("Alerta enviada por correo")
                 _actualizar_correo(id_alerta, "enviado", f"Enviado a {destinatario}")
             except Exception as e:

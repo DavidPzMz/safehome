@@ -22,9 +22,11 @@ import uvicorn
 sys.path.insert(0, os.path.dirname(__file__))
 from detector import DetectorPersonas
 from alertas import SistemaAlertas, leer_historial, borrar_historial, ruta_imagen_alerta, marcar_correos_pendientes
+from alertas import enviar_codigo, remitente_listo
+from verificacion import Verificacion, correo_valido
 import config
 from gestor_config import cargar as cargar_config, guardar as guardar_config
-from gestor_config import MODO, MODO_PRUEBAS, CARPETA_CONFIG, migrar_configuracion
+from gestor_config import MODO, MODO_PRUEBAS, CARPETA_CONFIG, CLAVES_REMITENTE, migrar_configuracion
 
 
 class GestorConexiones:
@@ -98,6 +100,12 @@ class CambioConfiguracion(BaseModel):
 
 class CambioZonas(BaseModel):
     zonas: Dict[str, Any]
+
+
+class PeticionCorreo(BaseModel):
+    paso: str                      # "actual" o "nuevo"
+    correo: Optional[str] = None   # solo para pedir el codigo del correo nuevo
+    codigo: Optional[str] = None   # solo para confirmar
 
 
 def _abrir_captura(fuente):
@@ -897,7 +905,10 @@ async def obtener_estado():
 
 @aplicacion.get("/configuracion")
 async def obtener_configuracion():
-    return config_actual
+    if MODO_PRUEBAS:
+        return config_actual
+    # la app final no ve la cuenta que manda los correos (ni su contrasena)
+    return {k: v for k, v in config_actual.items() if k not in CLAVES_REMITENTE}
 
 
 @aplicacion.post("/configuracion")
@@ -906,6 +917,11 @@ async def cambiar_configuracion(cambio: CambioConfiguracion):
     global config_actual
     fuente_anterior = config_actual.get("FUENTE_CAMARA")
     cfg = migrar_configuracion(cambio.configuracion)
+    # el correo verificado solo cambia con el codigo; en la app final ningun
+    # dato del correo se cambia por aqui (se usa /correo/...)
+    for clave in list(cfg):
+        if clave == "CORREO_VERIFICADO" or (not MODO_PRUEBAS and clave.startswith("CORREO_")):
+            del cfg[clave]
     # si el video esta dentro del backend se guarda la ruta corta (el
     # AppImage se monta en /tmp distinto cada vez)
     fuente = cfg.get("FUENTE_CAMARA")
@@ -978,6 +994,84 @@ async def borrar_alertas():
     """Borra todo el historial de alertas."""
     borrar_historial()
     return {"estado": "borrado"}
+
+
+# --- Correo de alertas con verificacion por codigo (app final) ---
+
+verificacion = Verificacion()
+
+
+def _correo_verificado():
+    # el correo guardado, solo si se comprobo con el codigo
+    destino = config_actual.get("CORREO_DESTINATARIO", "")
+    return destino if destino and destino == config_actual.get("CORREO_VERIFICADO", "") else ""
+
+
+@aplicacion.get("/correo")
+async def estado_correo():
+    return {
+        "correo": config_actual.get("CORREO_DESTINATARIO", ""),
+        "verificado": bool(_correo_verificado()),
+        "remitente_listo": remitente_listo(),
+    }
+
+
+@aplicacion.post("/correo/codigo")
+async def pedir_codigo(peticion: PeticionCorreo):
+    """Manda un codigo de 4 digitos al correo actual o al nuevo."""
+    actual = _correo_verificado()
+    if peticion.paso == "actual":
+        if not actual:
+            raise HTTPException(status_code=400, detail="No hay un correo verificado")
+        destino = actual
+    elif peticion.paso == "nuevo":
+        destino = (peticion.correo or "").strip().lower()
+        if not correo_valido(destino):
+            raise HTTPException(status_code=400, detail="Escribe un correo válido")
+        if destino == actual:
+            raise HTTPException(status_code=400, detail="Ese ya es tu correo verificado")
+        # para cambiar un correo verificado primero se confirma el anterior
+        if actual and not verificacion.actual_confirmado():
+            raise HTTPException(status_code=403, detail="Primero confirma tu correo actual")
+    else:
+        raise HTTPException(status_code=400, detail="Paso inválido")
+
+    try:
+        codigo = verificacion.nuevo_codigo(peticion.paso, destino)
+    except ValueError as e:
+        raise HTTPException(status_code=429, detail=str(e))
+    try:
+        # el envio tarda unos segundos: se hace en otro hilo
+        await asyncio.to_thread(enviar_codigo, destino, codigo)
+    except RuntimeError as e:
+        verificacion.descartar(peticion.paso)
+        raise HTTPException(status_code=502, detail=str(e))
+    return {"estado": "enviado", "correo": destino}
+
+
+@aplicacion.post("/correo/confirmar")
+async def confirmar_codigo(peticion: PeticionCorreo):
+    """Revisa el codigo. En el paso "nuevo" guarda el correo como verificado."""
+    global config_actual
+    if peticion.paso not in ("actual", "nuevo"):
+        raise HTTPException(status_code=400, detail="Paso inválido")
+    if peticion.paso == "nuevo" and _correo_verificado() and not verificacion.actual_confirmado():
+        raise HTTPException(status_code=403, detail="Primero confirma tu correo actual")
+    try:
+        correo = verificacion.confirmar(peticion.paso, peticion.codigo or "")
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    if peticion.paso == "nuevo":
+        config_actual = dict(config_actual, CORREO_DESTINATARIO=correo, CORREO_VERIFICADO=correo)
+        guardar_config(config_actual)
+        verificacion.reiniciar()
+    return {"estado": "confirmado", "correo": correo}
+
+
+@aplicacion.post("/correo/cancelar")
+async def cancelar_cambio_correo():
+    verificacion.reiniciar()
+    return {"estado": "cancelado"}
 
 
 @aplicacion.get("/pruebas/eventos")

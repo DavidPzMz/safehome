@@ -24,6 +24,7 @@ python-backend/evidences/
 # Credenciales: nunca deben entrar al repositorio
 .env
 config.local.json
+remitente.json
 
 # Sistema operativo y editores
 .DS_Store

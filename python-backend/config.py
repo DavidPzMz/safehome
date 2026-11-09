@@ -112,12 +112,15 @@ ESPERA_ENTRE_ALERTAS_S = 5
 
 CORREO_SERVIDOR_SMTP = "smtp.gmail.com"
 CORREO_PUERTO_SMTP = 465
-CORREO_USUARIO = ""
+CORREO_USUARIO = "guaspossupersta@gmail.com"
 # Contrasena de aplicacion de Gmail. NO va en el codigo: se agarra de la
 # variable de entorno VIGILANCIA_CORREO_CONTRASENA o de config.json (local).
 # Se genera en https://myaccount.google.com/apppasswords
 CORREO_CONTRASENA = os.environ.get("VIGILANCIA_CORREO_CONTRASENA", "")
 CORREO_DESTINATARIO = ""
+# Correo que el usuario ya comprobo con el codigo de 4 digitos. En la app
+# final solo se mandan alertas si CORREO_DESTINATARIO es igual a este.
+CORREO_VERIFICADO = ""
 MENSAJE_ALERTA = "ALERTA: Actividad sospechosa detectada en la puerta"
 
 # --- Lee config.json y pisa los valores de arriba con lo que traiga ---

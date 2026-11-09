@@ -580,7 +580,25 @@ body {
 /* --- App de pruebas: lo que solo se ve en la version de pruebas --- */
 .solo-pruebas { display: none; }
 body.pruebas .solo-pruebas { display: block; }
-body.pruebas span.solo-pruebas { display: inline-block; }
+body.pruebas span.solo-pruebas,
+body.pruebas button.solo-pruebas { display: inline-block; }
+body.pruebas .solo-final { display: none; }
+
+/* correo de alertas con codigo de verificacion (app final) */
+.seccion-correo { margin-top: 16px; padding-top: 12px; border-top: 1px solid var(--borde-panel); }
+.titulo-seccion { font-weight: 600; margin-bottom: 8px; }
+.correo-guardado { margin-bottom: 8px; word-break: break-all; }
+.insignia-ok { color: var(--exito); font-size: 0.8rem; }
+.insignia-no { color: var(--advertencia); font-size: 0.8rem; }
+.fila-codigo { display: flex; gap: 8px; margin-top: 8px; align-items: center; }
+.fila-codigo input {
+    flex: 1; min-width: 0; padding: 8px; border-radius: 6px;
+    border: 1px solid var(--borde-panel); background: var(--fondo-oscuro); color: var(--texto-principal);
+}
+#codigoActual, #codigoNuevo { flex: 0 0 90px; text-align: center; letter-spacing: 6px; font-size: 1.1rem; }
+#btnCancelarCorreo { margin-top: 10px; }
+#mensajeCorreo { margin-top: 8px; min-height: 1em; }
+#mensajeCorreo.error { color: var(--peligro); }
 body.pruebas .seccion-alertas { overflow-y: auto; }
 body.pruebas .lista-alertas { min-height: 120px; flex: none; }
 body.pruebas .barra-nav { border-bottom: 2px solid var(--advertencia); }

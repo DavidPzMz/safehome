@@ -16,6 +16,15 @@ ARCHIVO_CONFIG_USUARIO = os.path.join(CARPETA_CONFIG, "config.json")
 # config.json que viene junto al backend (la base de inicio)
 ARCHIVO_CONFIG_BASE = os.path.join(os.path.dirname(__file__), "config.json")
 
+# Cuenta que MANDA los correos (usuario, contrasena, servidor). Va en un archivo
+# aparte que comparten las dos apps; la app final nunca la pide ni la muestra.
+CLAVES_REMITENTE = ("CORREO_USUARIO", "CORREO_CONTRASENA", "CORREO_SERVIDOR_SMTP", "CORREO_PUERTO_SMTP")
+ARCHIVO_REMITENTE = os.path.join(
+    CARPETA_CONFIG if "SAFEHOME_CARPETA_CONFIG" in os.environ else _carpeta_final,
+    "remitente.json")
+# respaldo: un remitente.json puesto junto al backend (no se sube al repositorio)
+ARCHIVO_REMITENTE_BASE = os.path.join(os.path.dirname(__file__), "remitente.json")
+
 # Nombres viejos (en ingles) de las claves -> nombres nuevos. Sirve para que
 # las configs que ya estaban guardadas se sigan leyendo bien.
 NOMBRES_ANTERIORES = {
@@ -123,11 +132,30 @@ def cargar():
         guardada = _leer_json(ARCHIVO_CONFIG_BASE)
     if guardada:
         for clave, valor in migrar_configuracion(guardada).items():
-            if clave in cfg:
+            if clave in cfg and clave not in CLAVES_REMITENTE:
                 cfg[clave] = valor
                 # tambien se cambia en el modulo config para que el detector lo vea
                 setattr(base, clave, valor)
+    # la cuenta que manda los correos sale de remitente.json (si existe)
+    remitente = _leer_json(ARCHIVO_REMITENTE) or _leer_json(ARCHIVO_REMITENTE_BASE)
+    if isinstance(remitente, dict):
+        for clave in CLAVES_REMITENTE:
+            if clave in remitente:
+                cfg[clave] = remitente[clave]
+                setattr(base, clave, remitente[clave])
     return cfg
+
+
+def _guardar_remitente(cfg):
+    # solo la app de pruebas puede cambiar la cuenta que manda los correos
+    datos = {clave: cfg.get(clave) for clave in CLAVES_REMITENTE}
+    try:
+        os.makedirs(os.path.dirname(ARCHIVO_REMITENTE), exist_ok=True)
+        with open(ARCHIVO_REMITENTE, "w") as archivo:
+            json.dump(datos, archivo, indent=2)
+        os.chmod(ARCHIVO_REMITENTE, 0o600)  # tiene la contrasena: solo el dueno
+    except OSError as e:
+        print(f"No se pudo guardar remitente.json: {e}")
 
 
 def guardar(cfg):
@@ -136,17 +164,20 @@ def guardar(cfg):
     para_json = {}
     for clave, valor in cfg.items():
         if clave.isupper():
+            setattr(base, clave, valor)
+            if clave in CLAVES_REMITENTE:
+                continue  # la cuenta remitente no va en config.json
             try:
                 json.dumps(valor)
                 para_json[clave] = valor
             except (TypeError, OverflowError):
                 para_json[clave] = str(valor)
-            setattr(base, clave, valor)
+    if MODO_PRUEBAS:
+        _guardar_remitente(cfg)
     try:
         os.makedirs(CARPETA_CONFIG, exist_ok=True)
         with open(ARCHIVO_CONFIG_USUARIO, "w") as archivo:
             json.dump(para_json, archivo, indent=2)
-        # aqui puede quedar la contrasena del correo: que solo la lea el dueno
         try:
             os.chmod(ARCHIVO_CONFIG_USUARIO, 0o600)
         except OSError:

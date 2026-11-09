@@ -160,13 +160,14 @@
             </div>
             <div class="cuerpo-modal">
                 <div class="pestanas-config">
-                    <button class="boton-pestana activo" data-pestana="pestana-umbrales">Umbrales</button>
-                    <button class="boton-pestana" data-pestana="pestana-rendimiento">Rendimiento</button>
-                    <button class="boton-pestana" data-pestana="pestana-correo">Email</button>
+                    <button class="boton-pestana activo" data-pestana="pestana-correo">Alertas</button>
                     <button class="boton-pestana" data-pestana="pestana-camara">Cámara</button>
+                    <!-- estas dos solo salen en la app de pruebas -->
+                    <button class="boton-pestana solo-pruebas" data-pestana="pestana-umbrales">Umbrales</button>
+                    <button class="boton-pestana solo-pruebas" data-pestana="pestana-rendimiento">Rendimiento</button>
                 </div>
                 
-                <div class="contenido-pestana activo" id="pestana-umbrales">
+                <div class="contenido-pestana" id="pestana-umbrales">
                     <div class="grupo-form">
                         <label>Forzar cerradura (s): <input type="number" step="0.5" min="0.5" max="30" id="cfgTiempoCerradura"></label>
                     </div>
@@ -202,26 +203,66 @@
                     <div class="grupo-form casilla">
                         <label><input type="checkbox" id="cfgGuardarImagenes"> Guardar imágenes</label>
                     </div>
-                    <div class="grupo-form">
-                        <label>Cooldown alertas (s): <input type="number" min="1" max="300" id="cfgEsperaAlertas"></label>
-                    </div>
                 </div>
                 
-                <div class="contenido-pestana" id="pestana-correo">
+                <div class="contenido-pestana activo" id="pestana-correo">
                     <div class="grupo-form">
-                        <label>Usuario: <input type="email" id="cfgCorreoUsuario"></label>
+                        <label>Tiempo entre alertas (s): <input type="number" min="1" max="300" id="cfgEsperaAlertas"></label>
                     </div>
-                    <div class="grupo-form">
-                        <label>Contraseña app: <input type="password" id="cfgCorreoContrasena"></label>
+
+                    <!-- App final: solo el correo que recibe las alertas, verificado con un codigo -->
+                    <div class="solo-final seccion-correo">
+                        <p class="titulo-seccion">Correo para recibir las alertas</p>
+
+                        <!-- correo guardado -->
+                        <div id="vistaCorreoGuardado">
+                            <p class="correo-guardado"><span id="textoCorreoGuardado"></span> <span id="insigniaCorreo"></span></p>
+                            <button class="btn btn-secundario btn-chico" id="btnCambiarCorreo">Cambiar correo</button>
+                        </div>
+
+                        <!-- paso 1 al cambiar: confirmar que el correo actual es tuyo -->
+                        <div id="pasoCorreoActual">
+                            <p class="nota-modal">Para cambiarlo, primero confirma que eres tú: mandaremos un código a <b id="correoActualPaso"></b>.</p>
+                            <button class="btn btn-info btn-chico" id="btnCodigoActual">Enviar código</button>
+                            <div class="fila-codigo" id="filaCodigoActual">
+                                <input type="text" id="codigoActual" maxlength="4" inputmode="numeric" placeholder="0000">
+                                <button class="btn btn-primario btn-chico" id="btnConfirmarActual">Confirmar</button>
+                            </div>
+                        </div>
+
+                        <!-- paso 2 (o unico, si no habia correo): el correo nuevo -->
+                        <div id="pasoCorreoNuevo">
+                            <div class="fila-codigo">
+                                <input type="email" id="correoNuevo" placeholder="tucorreo@ejemplo.com">
+                                <button class="btn btn-info btn-chico" id="btnVerificarNuevo">Verificar</button>
+                            </div>
+                            <div class="fila-codigo" id="filaCodigoNuevo">
+                                <input type="text" id="codigoNuevo" maxlength="4" inputmode="numeric" placeholder="0000">
+                                <button class="btn btn-primario btn-chico" id="btnConfirmarNuevo">Confirmar</button>
+                            </div>
+                        </div>
+
+                        <button class="btn btn-secundario btn-chico" id="btnCancelarCorreo">Cancelar cambio</button>
+                        <p class="nota-modal" id="mensajeCorreo"></p>
                     </div>
-                    <div class="grupo-form">
-                        <label>Destinatario: <input type="email" id="cfgCorreoDestino"></label>
-                    </div>
-                    <div class="grupo-form">
-                        <label>Servidor SMTP: <input type="text" id="cfgCorreoServidor"></label>
-                    </div>
-                    <div class="grupo-form">
-                        <label>Puerto: <input type="number" id="cfgCorreoPuerto"></label>
+
+                    <!-- App de pruebas: cuenta que manda los correos y destinatario a mano -->
+                    <div class="solo-pruebas">
+                        <div class="grupo-form">
+                            <label>Usuario (remitente): <input type="email" id="cfgCorreoUsuario"></label>
+                        </div>
+                        <div class="grupo-form">
+                            <label>Contraseña app: <input type="password" id="cfgCorreoContrasena"></label>
+                        </div>
+                        <div class="grupo-form">
+                            <label>Destinatario: <input type="email" id="cfgCorreoDestino"></label>
+                        </div>
+                        <div class="grupo-form">
+                            <label>Servidor SMTP: <input type="text" id="cfgCorreoServidor"></label>
+                        </div>
+                        <div class="grupo-form">
+                            <label>Puerto: <input type="number" id="cfgCorreoPuerto"></label>
+                        </div>
                     </div>
                 </div>
                 
