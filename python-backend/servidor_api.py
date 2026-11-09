@@ -216,7 +216,7 @@ def _registrar_evento(fuente, segundo_video, tipo, metricas):
 
 
 def _dibujar_encima(imagen, cfg):
-    """Pinta sobre la imagen lo ultimo que encontro el detector.
+    """Pinta sobre la imagen lo ultimo que encontro el detector (solo app de pruebas).
 
     Corre en el hilo de captura con lo que dejo el hilo de deteccion. Esas
     asignaciones son atomicas, lo peor que pasa es dibujar lo de un cuadro antes.
@@ -224,12 +224,10 @@ def _dibujar_encima(imagen, cfg):
     det = detector_actual
     if det is None:
         return
-    # las zonas solo se pintan en la app de pruebas
-    if MODO_PRUEBAS:
-        det.dibujar_roi(imagen)
-        if cfg.get("MODO_DETECCION", "cascada") == "cascada":
-            det.dibujar_zonas(imagen, det.cerraduras, (255, 0, 0), "cerradura")
-            det.dibujar_zonas(imagen, det.puertas, (0, 165, 255), "puerta")
+    det.dibujar_roi(imagen)
+    if cfg.get("MODO_DETECCION", "cascada") == "cascada":
+        det.dibujar_zonas(imagen, det.cerraduras, (255, 0, 0), "cerradura")
+        det.dibujar_zonas(imagen, det.puertas, (0, 165, 255), "puerta")
 
     personas = getattr(det, "ultimas_personas", [])
     if getattr(det, "ultimo_hay_persona", False) and len(personas) > 0:
@@ -244,7 +242,7 @@ def _dibujar_encima(imagen, cfg):
 
     puntos = getattr(det, "ultimos_puntos", [])
     if len(puntos) > 0 and cfg.get("MODO_DETECCION", "cascada") == "cascada":
-        det.dibujar_esqueleto(imagen, puntos, con_lineas=MODO_PRUEBAS)
+        det.dibujar_esqueleto(imagen, puntos, con_lineas=True)
 
     if getattr(det, "ultimo_alerta_trepar", False):
         cv2.rectangle(imagen, (0, 0),
@@ -363,14 +361,16 @@ def bucle_captura(ejecucion):
                         pass
 
             imagen = cuadro.copy()
-            # se dibujan las personas y avisos (las zonas solo en pruebas)
-            try:
-                _dibujar_encima(imagen, cfg)
-            except Exception as e:
-                print(f"Error dibujando encima del video: {e}")
-            if MODO_PRUEBAS and segundo_video is not None:
-                cv2.putText(imagen, f"t={segundo_video:.1f}s", (10, imagen.shape[0] - 12),
-                            cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2)
+            # en la app final se muestra el video limpio; los recuadros,
+            # esqueletos y zonas solo se dibujan en la app de pruebas
+            if MODO_PRUEBAS:
+                try:
+                    _dibujar_encima(imagen, cfg)
+                except Exception as e:
+                    print(f"Error dibujando encima del video: {e}")
+                if segundo_video is not None:
+                    cv2.putText(imagen, f"t={segundo_video:.1f}s", (10, imagen.shape[0] - 12),
+                                cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2)
 
             with candado_cuadro:
                 ultimo_cuadro = imagen
