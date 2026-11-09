@@ -8,7 +8,7 @@ manda una alerta por correo con la foto.
 
 ---
 
-## Solo quiero usar el programa (Linux)
+## Programa (Linux)
 
 1. Entra a **Releases** (columna derecha de esta página) y descarga
    `SafeHome-linux.tar.gz`.
@@ -22,11 +22,11 @@ manda una alerta por correo con la foto.
    ./SafeHome.sh
    ```
 
-Necesita Ubuntu 24.04 o más nuevo (o similar) e internet la primera vez.
+Necesita internet la primera vez.
 
 ---
 
-## Quiero el código para modificarlo
+## Código
 
 | Carpeta | Qué tiene |
 | --- | --- |
@@ -34,8 +34,6 @@ Necesita Ubuntu 24.04 o más nuevo (o similar) e internet la primera vez.
 | `python-backend/` | La detección (YOLO-pose + OpenCV), el servidor y las alertas |
 | `src-tauri/` | La ventana de escritorio (Tauri / Rust) |
 
-Lo pesado (librerías, compilados, modelo y vídeos) **no** se sube: se descarga con
-estos comandos.
 
 1. Instala Python 3.11+, Node.js 18+ y Rust ([rustup.rs](https://rustup.rs)).
 2. Librerías de Python:
@@ -59,8 +57,3 @@ estos comandos.
    ```
 
 El modelo `yolov8n-pose.pt` se descarga solo la primera vez que se ejecuta.
-
-## Correo de alertas
-
-El correo se configura desde la pestaña **Correo** del programa. La contraseña
-de aplicación de Gmail nunca se guarda en el código.
