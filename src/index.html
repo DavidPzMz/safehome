@@ -35,16 +35,16 @@
                 <button id="btnPausar" class="btn btn-secundario" disabled>⏸ Pausar</button>
                 <button id="btnDetener" class="btn btn-peligro" disabled>⏹ Detener</button>
                 <button id="btnZonas" class="btn btn-info">▦ Zonas</button>
-                <button id="btnZonasEnVideo" class="btn btn-secundario">Ocultar zonas en video</button>
                 <button id="btnConfiguracion" class="btn btn-secundario">⚙ Config</button>
             </div>
         </section>
 
-        <!-- Lado derecho: que esta detectando y la lista de alertas -->
+        <!-- Lado derecho: la lista de alertas (y en pruebas el estado y metricas) -->
         <aside class="seccion-alertas">
+            <!-- El estado de deteccion solo sale en la app de pruebas -->
+            <div class="solo-pruebas">
             <div class="encabezado-panel">
                 <h3>⚠️ Estado de Detección</h3>
-                <button id="btnLimpiarRegistro" class="btn btn-chico btn-secundario">Limpiar</button>
             </div>
             <div class="rejilla-estado" id="rejillaEstado">
                 <div class="elemento-estado">
@@ -76,6 +76,7 @@
                     <span class="valor-estado" id="estTiempo">—</span>
                 </div>
             </div>
+            </div>
             
             <!-- Esto solo sale en la app de pruebas (metricas y registro) -->
             <div class="solo-pruebas">
@@ -106,10 +107,14 @@
                 <ul class="lista-alertas eventos-pruebas" id="eventosPruebas"></ul>
             </div>
 
+            <!-- Historial de alertas (se guarda aunque se cierre la app) -->
             <div class="encabezado-panel">
                 <h3>📋 Registro de Alertas</h3>
+                <button id="btnLimpiarRegistro" class="btn btn-chico btn-secundario">Borrar</button>
             </div>
-            <ul class="lista-alertas" id="listaAlertas"></ul>
+            <ul class="lista-alertas" id="listaAlertas">
+                <li class="sin-alertas">Todavía no hay alertas</li>
+            </ul>
         </aside>
     </main>
 
@@ -247,6 +252,21 @@
             <div class="pie-modal">
                 <button class="btn btn-secundario" id="cancelarConfiguracion">Cancelar</button>
                 <button class="btn btn-primario" id="guardarConfiguracion">Guardar</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Ventana para ver una alerta: foto y si se mando el correo -->
+    <div class="fondo-modal" id="modalAlerta">
+        <div class="modal modal-grande">
+            <div class="encabezado-modal">
+                <h3 id="tituloAlerta">Alerta</h3>
+                <button class="cerrar-modal" id="cerrarAlerta">×</button>
+            </div>
+            <div class="cuerpo-modal">
+                <img id="imagenAlerta" class="imagen-alerta" alt="Foto de la alerta">
+                <ul class="tipos-alerta" id="tiposAlerta"></ul>
+                <p class="correo-alerta" id="correoAlerta"></p>
             </div>
         </div>
     </div>

@@ -14,13 +14,14 @@ from contextlib import asynccontextmanager
 import cv2
 import numpy as np
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, Response
+from fastapi.responses import FileResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import uvicorn
 
 sys.path.insert(0, os.path.dirname(__file__))
 from detector import DetectorPersonas
-from alertas import SistemaAlertas
+from alertas import SistemaAlertas, leer_historial, borrar_historial, ruta_imagen_alerta, marcar_correos_pendientes
 import config
 from gestor_config import cargar as cargar_config, guardar as guardar_config
 from gestor_config import MODO, MODO_PRUEBAS, CARPETA_CONFIG, migrar_configuracion
@@ -224,10 +225,12 @@ def _dibujar_encima(imagen, cfg):
     det = detector_actual
     if det is None:
         return
-    det.dibujar_roi(imagen)
-    if cfg.get("MODO_DETECCION", "cascada") == "cascada":
-        det.dibujar_zonas(imagen, det.cerraduras, (255, 0, 0), "cerradura")
-        det.dibujar_zonas(imagen, det.puertas, (0, 165, 255), "puerta")
+    # las zonas solo se pintan en la app de pruebas
+    if MODO_PRUEBAS:
+        det.dibujar_roi(imagen)
+        if cfg.get("MODO_DETECCION", "cascada") == "cascada":
+            det.dibujar_zonas(imagen, det.cerraduras, (255, 0, 0), "cerradura")
+            det.dibujar_zonas(imagen, det.puertas, (0, 165, 255), "puerta")
 
     personas = getattr(det, "ultimas_personas", [])
     if getattr(det, "ultimo_hay_persona", False) and len(personas) > 0:
@@ -364,12 +367,11 @@ def bucle_captura(ejecucion):
                         pass
 
             imagen = cuadro.copy()
-            # en pruebas siempre se dibuja: zonas, esqueleto y segundo del video
-            if MODO_PRUEBAS or cfg.get("MOSTRAR_ZONAS", True):
-                try:
-                    _dibujar_encima(imagen, cfg)
-                except Exception as e:
-                    print(f"Error dibujando encima del video: {e}")
+            # se dibujan las personas y avisos (las zonas solo en pruebas)
+            try:
+                _dibujar_encima(imagen, cfg)
+            except Exception as e:
+                print(f"Error dibujando encima del video: {e}")
             if MODO_PRUEBAS and segundo_video is not None:
                 cv2.putText(imagen, f"t={segundo_video:.1f}s", (10, imagen.shape[0] - 12),
                             cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2)
@@ -560,6 +562,7 @@ async def ciclo_de_vida(_aplicacion: FastAPI):
     global bucle_eventos, config_actual
     bucle_eventos = asyncio.get_event_loop()
     config_actual = cargar_config()
+    marcar_correos_pendientes()
     if MODO_PRUEBAS:
         _aplicar_zonas_video(config_actual.get("FUENTE_CAMARA", 0), config_actual)
     yield
@@ -847,7 +850,7 @@ def _cerrar_vista_previa():
 @aplicacion.websocket("/ws/estado")
 async def websocket_estado(websocket: WebSocket):
     # el panel se conecta aqui para recibir el estado en vivo
-    # revisa que la conexion venga del panel
+    # (el CORS no aplica a websockets, por eso se revisa el origen a mano)
     if not origen_permitido(websocket.headers.get("origin")):
         await websocket.close(code=1008)
         return
@@ -968,6 +971,31 @@ async def cambiar_zonas(cambio: CambioZonas):
         _guardar_zonas_video(config_actual.get("FUENTE_CAMARA", 0), config_actual)
     _pasar_zonas_al_detector(config_actual)
     return {"estado": "guardado"}
+
+
+@aplicacion.get("/alertas")
+async def obtener_alertas():
+    """Historial de alertas, la mas nueva primero."""
+    return {"alertas": leer_historial()[::-1]}
+
+
+@aplicacion.get("/alertas/{id_alerta}/imagen")
+async def imagen_alerta(id_alerta: str):
+    """Foto que se tomo en la alerta."""
+    try:
+        ruta = ruta_imagen_alerta(id_alerta)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="id no valido")
+    if not os.path.exists(ruta):
+        raise HTTPException(status_code=404, detail="No hay imagen")
+    return FileResponse(ruta, media_type="image/jpeg")
+
+
+@aplicacion.post("/alertas/borrar")
+async def borrar_alertas():
+    """Borra todo el historial de alertas."""
+    borrar_historial()
+    return {"estado": "borrado"}
 
 
 @aplicacion.get("/pruebas/eventos")

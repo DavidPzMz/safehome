@@ -681,18 +681,6 @@ function prepararLienzoZonas() {
         mostrarAviso(zonasVisibles ? 'Zonas visibles' : 'Zonas ocultas', 'info');
     };
 
-    // oculta o enseña las zonas encima del video en vivo (se guarda en la config)
-    $('btnZonasEnVideo').onclick = async () => {
-        try {
-            const cfg = await llamarServidor('/configuracion');
-            const nuevoValor = !cfg.MOSTRAR_ZONAS;
-            cfg.MOSTRAR_ZONAS = nuevoValor;
-            await llamarServidor('/configuracion', { method: 'POST', body: JSON.stringify({ configuracion: cfg }) });
-            $('btnZonasEnVideo').textContent = nuevoValor ? 'Ocultar zonas en video' : 'Mostrar zonas en video';
-            mostrarAviso(nuevoValor ? 'Zonas visibles en video' : 'Zonas ocultas en video', 'exito');
-        } catch (e) { mostrarAviso('Error: ' + e.message, 'error'); }
-    };
-
     // borra todas las zonas (pregunta antes)
     $('btnLimpiarZonas').onclick = () => {
         if (confirm('¿Limpiar todas las zonas?')) {
@@ -793,7 +781,9 @@ function prepararControles() {
         mostrarAviso('Refrescando fondo de zonas', 'info');
     };
 
-    // pide las zonas del video actual antes de abrir el editor
+    // antes de abrir el editor se piden las zonas al servidor: si se cambio
+    // de video, las que estaban en memoria eran las del video anterior y al
+    // guardar se le pegaban al video nuevo
     $('btnZonas').onclick = async () => {
         try {
             zonasActuales = await llamarServidor('/zonas');
@@ -846,7 +836,16 @@ function prepararControles() {
         }
     };
 
-    $('btnLimpiarRegistro').onclick = () => $('listaAlertas').innerHTML = '';
+    // borra el historial de alertas (pregunta antes)
+    $('btnLimpiarRegistro').onclick = async () => {
+        if (!confirm('¿Borrar todas las alertas guardadas y sus fotos?')) return;
+        try {
+            await llamarServidor('/alertas/borrar', { method: 'POST' });
+            await cargarAlertas();
+            mostrarAviso('Registro de alertas borrado', 'info');
+        } catch (e) { mostrarAviso('Error: ' + e.message, 'error'); }
+    };
+    $('cerrarAlerta').onclick = () => cerrarVentana('modalAlerta');
     $('btnRedetectarCamaras').onclick = async () => {
         if (!await esperarServidor()) {
             mostrarAviso('El servidor no responde, reintenta en un momento', 'advertencia');
@@ -926,6 +925,76 @@ function empezarVideo() {
     pedirCuadro();
 }
 
+// --- Registro de alertas ---------------------------------------------------
+
+// texto e icono segun como le fue al correo
+const ESTADOS_CORREO = {
+    enviado: { icono: '✅', texto: 'Enviada por correo', clase: 'ok' },
+    enviando: { icono: '⏳', texto: 'Enviando correo...', clase: 'info' },
+    error: { icono: '❌', texto: 'No se pudo enviar el correo', clase: 'alerta' },
+    sin_configurar: { icono: '⚠️', texto: 'Correo no configurado', clase: 'precaucion' },
+};
+let alertasGuardadas = [];
+let firmaAlertas = '';
+
+// trae el historial del servidor y rehace la lista solo si cambio algo
+async function cargarAlertas() {
+    try {
+        const r = await llamarServidor('/alertas');
+        const firma = JSON.stringify(r.alertas);
+        if (firma === firmaAlertas) return;
+        firmaAlertas = firma;
+        alertasGuardadas = r.alertas;
+        pintarAlertas();
+    } catch (e) {}
+}
+
+function pintarAlertas() {
+    const lista = $('listaAlertas');
+    lista.innerHTML = '';
+    if (alertasGuardadas.length === 0) {
+        lista.innerHTML = '<li class="sin-alertas">Todavía no hay alertas</li>';
+        return;
+    }
+    for (const alerta of alertasGuardadas) {
+        const correo = ESTADOS_CORREO[alerta.correo] || ESTADOS_CORREO.error;
+        const li = document.createElement('li');
+        li.className = 'elemento-alerta seleccionable';
+        li.title = 'Clic para ver la alerta';
+
+        const hora = document.createElement('span');
+        hora.className = 'hora';
+        hora.textContent = `${alerta.fecha} ${alerta.hora}`;
+        const tipos = document.createElement('div');
+        tipos.textContent = alerta.tipos.join(' · ');
+        const estado = document.createElement('div');
+        estado.className = 'estado-correo ' + correo.clase;
+        estado.textContent = `${correo.icono} ${correo.texto}`;
+
+        li.append(hora, tipos, estado);
+        li.onclick = () => verAlerta(alerta);
+        lista.appendChild(li);
+    }
+}
+
+// abre la ventana con la foto y los datos de la alerta
+function verAlerta(alerta) {
+    const correo = ESTADOS_CORREO[alerta.correo] || ESTADOS_CORREO.error;
+    $('tituloAlerta').textContent = `🚨 Alerta del ${alerta.fecha} a las ${alerta.hora}`;
+    $('imagenAlerta').src = `${SERVIDOR}/alertas/${alerta.id}/imagen`;
+    const tipos = $('tiposAlerta');
+    tipos.innerHTML = '';
+    for (const t of alerta.tipos) {
+        const li = document.createElement('li');
+        li.textContent = t;
+        tipos.appendChild(li);
+    }
+    const detalle = alerta.detalle_correo ? ` (${alerta.detalle_correo})` : '';
+    $('correoAlerta').textContent = `${correo.icono} ${correo.texto}${detalle}`;
+    $('correoAlerta').className = 'correo-alerta ' + correo.clase;
+    abrirVentana('modalAlerta');
+}
+
 // arranca todo cuando ya cargo la pagina
 async function iniciar() {
     prepararPestanas();
@@ -948,6 +1017,9 @@ async function iniciar() {
     conectarWS();
     empezarVideo();
     prepararModoPruebas();
+    // el registro de alertas se revisa cada 3 segundos
+    setTimeout(cargarAlertas, 1500);
+    setInterval(cargarAlertas, 3000);
     await cargarConfiguracion();
 }
 
