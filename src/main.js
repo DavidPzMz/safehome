@@ -732,7 +732,7 @@ async function cargarFondoZonas() {
     return true;
 }
 
-// manda iniciar/pausar/detener al servidor
+// manda iniciar/detener al servidor
 async function mandarAccion(accion) {
     return llamarServidor('/control', { method: 'POST', body: JSON.stringify({ accion }) });
 }
@@ -743,7 +743,6 @@ function prepararControles() {
         try {
             await mandarAccion('iniciar');
             $('btnIniciar').disabled = true;
-            $('btnPausar').disabled = false;
             $('btnDetener').disabled = false;
             ponerPuntoEstado('vigilando');
             ponerTextoEstado('Vigilando...');
@@ -752,22 +751,10 @@ function prepararControles() {
         } catch (e) { mostrarAviso('Error al iniciar: ' + e.message, 'error'); }
     };
 
-    $('btnPausar').onclick = async () => {
-        try {
-            await mandarAccion('pausar');
-            $('btnIniciar').disabled = false;
-            $('btnPausar').disabled = true;
-            ponerPuntoEstado('pausado');
-            ponerTextoEstado('Pausado');
-            mostrarAviso('Vigilancia pausada', 'advertencia');
-        } catch (e) { mostrarAviso('Error al pausar: ' + e.message, 'error'); }
-    };
-
     $('btnDetener').onclick = async () => {
         try {
             await mandarAccion('detener');
             $('btnIniciar').disabled = false;
-            $('btnPausar').disabled = true;
             $('btnDetener').disabled = true;
             ponerPuntoEstado('conectado');
             ponerTextoEstado('Detenido');

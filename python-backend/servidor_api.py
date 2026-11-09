@@ -62,7 +62,6 @@ alertas_actual: Optional[SistemaAlertas] = None
 captura: Optional[cv2.VideoCapture] = None
 captura_vista_previa: Optional[cv2.VideoCapture] = None
 en_marcha = False
-pausado = False
 config_actual = {}
 candado_cuadro = threading.Lock()
 ultimo_cuadro: Optional[np.ndarray] = None
@@ -264,7 +263,7 @@ def bucle_captura(ejecucion):
     Es el unico hilo que toca `captura`. La deteccion agarra cuadros de una
     cola chiquita, asi si va lenta solo se brincan cuadros y el video no se frena.
     """
-    global en_marcha, pausado, captura, ultimo_cuadro, config_actual
+    global en_marcha, captura, ultimo_cuadro, config_actual
     global fps_captura, captura_es_video, cuadros_capturados
     global fps_captura_medido, camara_activa
 
@@ -307,14 +306,11 @@ def bucle_captura(ejecucion):
     try:
         while en_marcha and ejecucion == num_ejecucion:
             cfg = config_actual  # se recarga para agarrar cambios de zonas al vuelo
-            if pausado:
-                time.sleep(0.05)
-                continue
 
             if periodo_video > 0:
                 ahora = time.monotonic()
                 if ahora < siguiente_t:
-                    # se duerme poquito para hacer caso rapido a detener/pausar
+                    # se duerme poquito para hacer caso rapido a detener
                     time.sleep(min(siguiente_t - ahora, 0.05))
                     continue
                 siguiente_t += periodo_video
@@ -390,7 +386,7 @@ def bucle_captura(ejecucion):
 
 def bucle_deteccion(ejecucion):
     """Saca cuadros de la cola, los pasa al detector y avisa al panel."""
-    global en_marcha, pausado, detector_actual, alertas_actual, ultimo_estado, config_actual
+    global en_marcha, detector_actual, alertas_actual, ultimo_estado, config_actual
 
     cfg = config_actual
     fuente = cfg.get("FUENTE_CAMARA", 0)
@@ -437,11 +433,6 @@ def bucle_deteccion(ejecucion):
     eventos_activos = set()  # para registrar cada evento solo cuando empieza
 
     while en_marcha and ejecucion == num_ejecucion:
-        if pausado:
-            _vaciar_cola_deteccion()
-            time.sleep(0.05)
-            continue
-
         try:
             hora_cuadro, cuadro, segundo_video = cola_deteccion.get(timeout=0.2)
         except queue.Empty:
@@ -867,14 +858,13 @@ async def websocket_estado(websocket: WebSocket):
 
 @aplicacion.post("/control")
 async def control(peticion: PeticionControl):
-    # iniciar, pausar o detener la vigilancia
-    global en_marcha, pausado, hilo_deteccion, hilo_captura, ultimo_cuadro, ultimo_estado
+    # iniciar o detener la vigilancia
+    global en_marcha, hilo_deteccion, hilo_captura, ultimo_cuadro, ultimo_estado
     global num_ejecucion
 
     if peticion.accion == "iniciar":
         if not en_marcha:
             en_marcha = True
-            pausado = False
             ultimo_cuadro = None
             ultimo_estado = {}
             _vaciar_cola_deteccion()
@@ -885,24 +875,16 @@ async def control(peticion: PeticionControl):
             hilo_captura.start()
             hilo_deteccion.start()
             return {"estado": "iniciado"}
-        elif pausado:
-            pausado = False
-            return {"estado": "reanudado"}
         return {"estado": "ya_estaba_corriendo"}
 
     elif peticion.accion == "detener":
         en_marcha = False
-        pausado = False
         if hilo_captura and hilo_captura.is_alive():
             hilo_captura.join(timeout=3)
         if hilo_deteccion and hilo_deteccion.is_alive():
             hilo_deteccion.join(timeout=3)
         _vaciar_cola_deteccion()
         return {"estado": "detenido"}
-
-    elif peticion.accion == "pausar":
-        pausado = True
-        return {"estado": "pausado"}
 
     raise HTTPException(status_code=400, detail="Acción inválida")
 

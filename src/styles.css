@@ -62,7 +62,7 @@ body {
     gap: 12px;
 }
 
-/* Puntito de color que dice si esta conectado, vigilando, pausado... */
+/* Puntito de color que dice si esta conectado o vigilando */
 .punto {
     height: 10px;
     width: 10px;
@@ -74,7 +74,6 @@ body {
 .punto.desconectado { background-color: #666; box-shadow: none; }
 .punto.conectado { background-color: var(--exito); box-shadow: 0 0 8px var(--exito); }
 .punto.vigilando { background-color: var(--acento); box-shadow: 0 0 8px var(--acento); }
-.punto.pausado { background-color: var(--advertencia); box-shadow: 0 0 8px var(--advertencia); }
 .punto.error { background-color: var(--peligro); box-shadow: 0 0 8px var(--peligro); }
 
 .insignia {
