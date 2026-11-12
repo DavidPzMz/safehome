@@ -1,0 +1,19 @@
+name = "safehome-correo"
+main = "src/index.js"
+compatibility_date = "2025-06-01"
+workers_dev = true
+preview_urls = false
+
+# REMITENTE_CORREO (correo verificado en Brevo) no va aqui: se pone una vez con
+#   npx wrangler deploy --var REMITENTE_CORREO:correo@ejemplo.com
+# y keep_vars hace que no se borre en las siguientes publicaciones
+keep_vars = true
+
+# guarda los codigos y los contadores de envios
+[[kv_namespaces]]
+binding = "LIMITES"
+id = "d057475f388a49bea213770632435a0f"
+
+# Secretos (no van aqui, se ponen con wrangler):
+#   npx wrangler secret put BREVO_API_KEY
+#   npx wrangler secret put FIRMA_SECRETA

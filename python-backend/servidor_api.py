@@ -22,7 +22,7 @@ import uvicorn
 sys.path.insert(0, os.path.dirname(__file__))
 from detector import DetectorPersonas
 from alertas import SistemaAlertas, leer_historial, borrar_historial, ruta_imagen_alerta, marcar_correos_pendientes
-from alertas import enviar_codigo, remitente_listo
+from alertas import enviar_codigo, envio_listo, servicio_activo, servicio_pedir_codigo, servicio_confirmar
 from verificacion import Verificacion, correo_valido
 import config
 from gestor_config import cargar as cargar_config, guardar as guardar_config
@@ -908,7 +908,7 @@ async def obtener_configuracion():
     if MODO_PRUEBAS:
         return config_actual
     # la app final no ve la cuenta que manda los correos (ni su contrasena)
-    return {k: v for k, v in config_actual.items() if k not in CLAVES_REMITENTE}
+    return {k: v for k, v in config_actual.items() if k not in CLAVES_REMITENTE and k != "CORREO_TOKEN"}
 
 
 @aplicacion.post("/configuracion")
@@ -920,7 +920,7 @@ async def cambiar_configuracion(cambio: CambioConfiguracion):
     # el correo verificado solo cambia con el codigo; en la app final ningun
     # dato del correo se cambia por aqui (se usa /correo/...)
     for clave in list(cfg):
-        if clave == "CORREO_VERIFICADO" or (not MODO_PRUEBAS and clave.startswith("CORREO_")):
+        if clave in ("CORREO_VERIFICADO", "CORREO_TOKEN") or (not MODO_PRUEBAS and clave.startswith("CORREO_")):
             del cfg[clave]
     # si el video esta dentro del backend se guarda la ruta corta (el
     # AppImage se monta en /tmp distinto cada vez)
@@ -1012,7 +1012,7 @@ async def estado_correo():
     return {
         "correo": config_actual.get("CORREO_DESTINATARIO", ""),
         "verificado": bool(_correo_verificado()),
-        "remitente_listo": remitente_listo(),
+        "remitente_listo": envio_listo(),
     }
 
 
@@ -1041,8 +1041,12 @@ async def pedir_codigo(peticion: PeticionCorreo):
     except ValueError as e:
         raise HTTPException(status_code=429, detail=str(e))
     try:
-        # el envio tarda unos segundos: se hace en otro hilo
-        await asyncio.to_thread(enviar_codigo, destino, codigo)
+        # el envio tarda unos segundos: se hace en otro hilo. Con el servicio
+        # en la nube el codigo lo genera y lo revisa el servicio
+        if servicio_activo():
+            await asyncio.to_thread(servicio_pedir_codigo, destino)
+        else:
+            await asyncio.to_thread(enviar_codigo, destino, codigo)
     except RuntimeError as e:
         verificacion.descartar(peticion.paso)
         raise HTTPException(status_code=502, detail=str(e))
@@ -1057,12 +1061,19 @@ async def confirmar_codigo(peticion: PeticionCorreo):
         raise HTTPException(status_code=400, detail="Paso inválido")
     if peticion.paso == "nuevo" and _correo_verificado() and not verificacion.actual_confirmado():
         raise HTTPException(status_code=403, detail="Primero confirma tu correo actual")
+    token = ""
     try:
-        correo = verificacion.confirmar(peticion.paso, peticion.codigo or "")
-    except ValueError as e:
+        if servicio_activo():
+            correo = verificacion.pendiente(peticion.paso)
+            token = await asyncio.to_thread(servicio_confirmar, correo, (peticion.codigo or "").strip())
+            verificacion.aceptar(peticion.paso)
+        else:
+            correo = verificacion.confirmar(peticion.paso, peticion.codigo or "")
+    except (ValueError, RuntimeError) as e:
         raise HTTPException(status_code=400, detail=str(e))
     if peticion.paso == "nuevo":
-        config_actual = dict(config_actual, CORREO_DESTINATARIO=correo, CORREO_VERIFICADO=correo)
+        config_actual = dict(config_actual, CORREO_DESTINATARIO=correo, CORREO_VERIFICADO=correo,
+                             CORREO_TOKEN=token)
         guardar_config(config_actual)
         verificacion.reiniciar()
     return {"estado": "confirmado", "correo": correo}

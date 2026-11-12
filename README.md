@@ -33,6 +33,7 @@ Necesita internet la primera vez.
 | `src/` | La interfaz (HTML, CSS y JavaScript) |
 | `python-backend/` | La detección (YOLO-pose + OpenCV), el servidor y las alertas |
 | `src-tauri/` | La ventana de escritorio (Tauri / Rust) |
+| `servicio-correo/` | Servicio en la nube que manda los correos (Cloudflare Worker + Brevo) |
 
 
 1. Instala Python 3.11+, Node.js 18+ y Rust ([rustup.rs](https://rustup.rs)).

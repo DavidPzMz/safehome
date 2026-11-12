@@ -65,6 +65,22 @@ class Verificacion:
                 self._actual_ok_hasta = time.time() + VIGENCIA_ACTUAL_OK_S
             return datos["correo"]
 
+    def pendiente(self, paso):
+        # correo al que se le pidio codigo en ese paso (cuando el codigo lo
+        # revisa el servicio en la nube y no esta clase)
+        with self._candado:
+            datos = self._codigos.get(paso)
+            if not datos or time.time() > datos["vence"]:
+                raise ValueError("Primero pide un código")
+            return datos["correo"]
+
+    def aceptar(self, paso):
+        # el servicio dijo que el codigo era correcto
+        with self._candado:
+            self._codigos.pop(paso, None)
+            if paso == "actual":
+                self._actual_ok_hasta = time.time() + VIGENCIA_ACTUAL_OK_S
+
     def actual_confirmado(self):
         with self._candado:
             return time.time() < self._actual_ok_hasta

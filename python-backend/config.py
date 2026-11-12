@@ -121,6 +121,8 @@ CORREO_DESTINATARIO = ""
 # Correo que el usuario ya comprobo con el codigo de 4 digitos. En la app
 # final solo se mandan alertas si CORREO_DESTINATARIO es igual a este.
 CORREO_VERIFICADO = ""
+# Lo da el servicio de correo al verificar; sin el no deja mandar alertas
+CORREO_TOKEN = ""
 MENSAJE_ALERTA = "ALERTA: Actividad sospechosa detectada en la puerta"
 
 # --- Lee config.json y pisa los valores de arriba con lo que traiga ---
