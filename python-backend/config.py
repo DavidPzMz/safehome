@@ -75,6 +75,20 @@ TREPAR_POSTURA_EXIGE_SUBIDA = True
 # alto de la puerta (asi se descarta gente lejos que se encima en la imagen)
 TREPAR_MOVIMIENTO_FRAC_PUERTA = 0.4
 
+# --- Trepar proporcional al torso (hombros -> cadera) ---
+# Con True los umbrales de trepar se miden en "torsos" y no en pixeles, asi no
+# dependen de que tan lejos este la persona. Con False se usan los px de arriba.
+# Los factores salen de video3/video4 (torso ~46 px): 18/46, 25/46, 40/46, 45/46
+TREPAR_PROPORCIONAL = True
+TREPAR_SUBIDA_CADERA_TORSOS = 0.4
+TREPAR_SUBIDA_PIES_TORSOS = 0.55
+TREPAR_MANOS_ARRIBA_TORSOS = 0.85
+TREPAR_MARGEN_PUERTA_TORSOS = 1.0
+# torso mas chico que esto = pose poco confiable
+TREPAR_TORSO_MIN_PX = 15
+# con torso chico: True usa los pixeles fijos de siempre, False no evalua
+TREPAR_TORSO_CHICO_USA_PX = True
+
 # --- Mirando alrededor: persona quieta junto a la puerta volteando la cabeza ---
 # El giro se mide con la nariz contra el centro de los hombros, en fracciones
 # del largo del torso, asi caminar no cuenta como voltear.

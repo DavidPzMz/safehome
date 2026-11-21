@@ -137,7 +137,7 @@
                     <button class="btn btn-chico btn-secundario" id="btnVerZonas">Ocultar zonas</button>
                     <button class="btn btn-chico btn-secundario" id="btnRefrescarZonas">Refrescar</button>
                 </div>
-                <p class="instrucciones-zona">Instrucciones: Selecciona el tipo y haz clic y arrastra en la imagen para dibujar. Arrastra la esquina ▼ del canvas para cambiar su tamaño.</p>
+                <p class="instrucciones-zona">Instrucciones: Selecciona el tipo y haz clic y arrastra en la imagen para dibujar. Si la cámara está inclinada, arrastra los cuadritos de las esquinas de la puerta o la cerradura hasta que coincidan con la imagen. Arrastra la esquina ▼ del canvas para cambiar su tamaño.</p>
                 <div id="marcoLienzoZonas">
                     <canvas id="lienzoZonas"></canvas>
                     <div id="agarraderaLienzo" title="Arrastra para redimensionar">⤡</div>
@@ -275,8 +275,8 @@
                         <small class="ayuda-camara" id="estadoEscaneo">Esperando lectura del backend...</small>
                     </div>
                     <div class="grupo-form">
-                        <label>O ruta/archivo de vídeo: <input type="text" id="cfgRutaVideo" placeholder="videos/video1.mp4 o /ruta/absoluta/video.mp4"></label>
-                        <small class="ayuda-camara">Si quieres usar un vídeo, escríbelo aquí o pulsa "Listar vídeos del backend". Solo se usa cuando lo defines explícitamente.</small>
+                        <label>O cámara IP / archivo de vídeo: <input type="text" id="cfgRutaVideo" placeholder="rtsp://usuario:contraseña@192.168.1.50:554/... o videos/video1.mp4"></label>
+                        <small class="ayuda-camara">Para una cámara IP o un DVR escribe su dirección RTSP (o http://). La contraseña se guarda solo en este equipo y aquí se muestra como ****. Para un vídeo escribe su ruta o pulsa "Listar vídeos del backend".</small>
                     </div>
                     <div class="grupo-form">
                         <label>Ancho: <input type="number" id="cfgAncho"></label>

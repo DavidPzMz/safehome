@@ -2,6 +2,7 @@ import os
 import sys
 import csv
 import json
+import re
 import asyncio
 import queue
 import threading
@@ -27,6 +28,65 @@ from verificacion import Verificacion, correo_valido
 import config
 from gestor_config import cargar as cargar_config, guardar as guardar_config
 from gestor_config import MODO, MODO_PRUEBAS, CARPETA_CONFIG, CLAVES_REMITENTE, migrar_configuracion
+
+
+# --- Camaras IP (RTSP / HTTP) ---
+# Las camaras de red y los DVR mandan el video por una direccion tipo
+# rtsp://usuario:contrasena@192.168.1.50:554/... OpenCV la abre con FFmpeg.
+# Por TCP es mas estable que por UDP (no llegan cuadros rotos por el Wi-Fi).
+# Si la camara no acepta TCP se prueba con lo que escoja FFmpeg (UDP).
+OPCIONES_RED = ("rtsp_transport;tcp", "")
+candado_red = threading.Lock()
+FALLOS_RED_MAX = 20  # lecturas malas seguidas (~1 s) antes de reconectar
+PREFIJOS_RED = ("rtsp://", "rtsps://", "http://", "https://")
+OCULTO = "****"
+
+
+def _es_url(fuente):
+    """True si la fuente es una camara de red (rtsp/http) y no un archivo."""
+    return isinstance(fuente, str) and fuente.strip().lower().startswith(PREFIJOS_RED)
+
+
+def _abrir_camara_red(url):
+    """Abre una camara IP con tiempo limite (no se queda colgado si no contesta)."""
+    with candado_red:
+        anterior = os.environ.get("OPENCV_FFMPEG_CAPTURE_OPTIONS")
+        try:
+            for opciones in OPCIONES_RED:
+                os.environ["OPENCV_FFMPEG_CAPTURE_OPTIONS"] = opciones
+                captura_red = cv2.VideoCapture(url, cv2.CAP_FFMPEG,
+                                               [cv2.CAP_PROP_OPEN_TIMEOUT_MSEC, 8000,
+                                                cv2.CAP_PROP_READ_TIMEOUT_MSEC, 8000])
+                if captura_red.isOpened():
+                    captura_red.set(cv2.CAP_PROP_BUFFERSIZE, 1)  # el cuadro mas nuevo
+                    return captura_red
+                captura_red.release()
+            return captura_red
+        finally:
+            if anterior is None:
+                os.environ.pop("OPENCV_FFMPEG_CAPTURE_OPTIONS", None)
+            else:
+                os.environ["OPENCV_FFMPEG_CAPTURE_OPTIONS"] = anterior
+
+
+def _ocultar_contrasena(fuente):
+    """rtsp://admin:clave@ip/... -> rtsp://admin:****@ip/... (para el panel y los print)."""
+    if not _es_url(fuente):
+        return fuente
+    return re.sub(r"^([a-zA-Z]+://[^:/@]+):[^@/]*@", r"\1:" + OCULTO + "@", fuente.strip())
+
+
+def _restaurar_contrasena(nueva, *guardadas):
+    """Si el panel regresa la direccion con **** se vuelve a poner la contrasena guardada.
+
+    Se busca en la fuente actual y en la ultima camara IP que se uso (por si
+    cambiaron a la USB y luego regresaron a la IP)."""
+    if not (_es_url(nueva) and (":" + OCULTO + "@") in nueva):
+        return nueva
+    for vieja in guardadas:
+        if _es_url(vieja) and _ocultar_contrasena(vieja) == nueva.strip():
+            return vieja
+    return nueva
 
 
 class GestorConexiones:
@@ -114,6 +174,11 @@ def _abrir_captura(fuente):
     if resuelta is None:
         return None
     try:
+        if _es_url(resuelta):
+            return _abrir_camara_red(resuelta)
+        if sys.platform == "win32" and isinstance(resuelta, int):
+            # en Windows DirectShow abre la webcam mas rapido que el de default
+            return cv2.VideoCapture(resuelta, cv2.CAP_DSHOW)
         return cv2.VideoCapture(resuelta)
     except Exception:
         return None
@@ -159,6 +224,10 @@ def _nombre_fuente(fuente):
     s = str(fuente).strip()
     if s.isdigit():
         return f"camara_{s}"
+    if _es_url(s):
+        # camara IP: se usa host + ruta, sin usuario ni contrasena
+        sin_usuario = re.sub(r"^[a-zA-Z]+://([^@/]*@)?", "", s)
+        return "ip_" + re.sub(r"[^0-9A-Za-z._-]", "_", sin_usuario)
     return os.path.basename(s.replace("\\", "/")) or s
 
 
@@ -275,12 +344,25 @@ def bucle_captura(ejecucion):
 
     cfg = config_actual
     fuente = cfg.get("FUENTE_CAMARA", 0)
-    es_video = isinstance(fuente, str)
+    es_red = _es_url(fuente)
+    es_video = isinstance(fuente, str) and not es_red
     fuente_resuelta = _resolver_fuente(fuente)
 
     captura = _abrir_captura(fuente)
+    if es_red and (not captura or not captura.isOpened()):
+        # la camara IP puede tardar (se esta prendiendo, el Wi-Fi...): se
+        # sigue intentando en lugar de rendirse a la primera
+        captura = _reconectar_red(captura, fuente, ejecucion)
+    if not es_red and not es_video:
+        # la webcam a veces tarda un poquito en soltarse (vista previa), se
+        # reintenta unos segundos antes de rendirse
+        for _ in range(6):
+            if (captura and captura.isOpened()) or not en_marcha or ejecucion != num_ejecucion:
+                break
+            time.sleep(0.5)
+            captura = _abrir_captura(fuente)
     if not captura or not captura.isOpened():
-        print(f"Error: No se pudo abrir la fuente: {fuente}")
+        print(f"Error: No se pudo abrir la fuente: {_ocultar_contrasena(fuente)}")
         camara_activa = False
         en_marcha = False
         captura_lista.set()
@@ -306,6 +388,7 @@ def bucle_captura(ejecucion):
     # Un archivo se lee mucho mas rapido de lo que dura, hay que frenarlo a la
     # velocidad real del video. monotonic() no brinca si cambia la hora.
     periodo_video = 1.0 / fps if es_video else 0.0
+    fallos_red = 0  # lecturas malas seguidas de la camara IP
     siguiente_t = time.monotonic()
     captura_lista.set()
 
@@ -335,9 +418,23 @@ def bucle_captura(ejecucion):
                     siguiente_t = time.monotonic()
                     time.sleep(0.05)
                     continue
+                if es_red:
+                    # una lectura mala suelta pasa seguido en red; si fallan
+                    # varias seguidas se cayo la camara IP (Wi-Fi, reinicio
+                    # del DVR...) y se reconecta sin detener la vigilancia
+                    fallos_red += 1
+                    if fallos_red < FALLOS_RED_MAX:
+                        time.sleep(0.05)
+                        continue
+                    fallos_red = 0
+                    captura = _reconectar_red(captura, fuente, ejecucion)
+                    if captura is None:
+                        break
+                    continue
                 break
 
             cuadros_capturados += 1
+            fallos_red = 0
             try:
                 cuadro = cv2.resize(cuadro, (cfg.get("ANCHO_CUADRO", 640),
                                              cfg.get("ALTO_CUADRO", 480)))
@@ -392,13 +489,48 @@ def bucle_captura(ejecucion):
                 pass
 
 
+def _reconectar_red(captura_vieja, fuente, ejecucion):
+    """Vuelve a abrir la camara IP hasta que conteste o se detenga la vigilancia."""
+    global camara_activa
+    global ultimo_estado
+    camara_activa = False
+    # el panel tiene que ver que la camara se cayo (el estado lo arma la deteccion,
+    # que sin cuadros ya no lo actualiza)
+    ultimo_estado = {**(ultimo_estado or {}), "camara_activa": False}
+    try:
+        if captura_vieja is not None:
+            captura_vieja.release()
+    except Exception:
+        pass
+    espera = 1.0
+    intento = 0
+    while en_marcha and ejecucion == num_ejecucion:
+        intento += 1
+        print(f"Camara IP sin imagen, reconectando (intento {intento}): {_ocultar_contrasena(fuente)}")
+        nueva = _abrir_captura(fuente)
+        if nueva is not None and nueva.isOpened():
+            # los primeros cuadros a veces salen mal (empieza a media imagen)
+            ok = any(nueva.read()[0] for _ in range(10))
+            if ok:
+                print("Camara IP reconectada")
+                camara_activa = True
+                return nueva
+            nueva.release()
+        # espera poquito a poquito para hacer caso rapido a detener
+        fin = time.monotonic() + espera
+        while time.monotonic() < fin and en_marcha and ejecucion == num_ejecucion:
+            time.sleep(0.1)
+        espera = min(espera * 2, 10.0)
+    return None
+
+
 def bucle_deteccion(ejecucion):
     """Saca cuadros de la cola, los pasa al detector y avisa al panel."""
     global en_marcha, detector_actual, alertas_actual, ultimo_estado, config_actual
 
     cfg = config_actual
     fuente = cfg.get("FUENTE_CAMARA", 0)
-    es_video = isinstance(fuente, str)
+    es_video = isinstance(fuente, str) and not _es_url(fuente)
 
     # espera a que la captura abra la fuente para saber sus fps reales
     captura_lista.wait(timeout=10)
@@ -438,6 +570,7 @@ def bucle_deteccion(ejecucion):
     modo_deteccion = cfg.get("MODO_DETECCION", "cascada")
     fps_efectivo = fps_nominal
     hora_cuadro_anterior = None
+    horas_analisis = deque()
     eventos_activos = set()  # para registrar cada evento solo cuando empieza
 
     while en_marcha and ejecucion == num_ejecucion:
@@ -448,15 +581,18 @@ def bucle_deteccion(ejecucion):
 
         # Si la deteccion va justa y se tiran cuadros, el tiempo real entre
         # analisis crece: se ajusta el fps del detector para que los umbrales
-        # en segundos sigan midiendo tiempo de reloj
-        if hora_cuadro_anterior is not None:
-            dt = hora_cuadro - hora_cuadro_anterior
-            if 0 < dt < 5.0:
-                fps_instante = 1.0 / dt
-                if abs(fps_instante - fps_efectivo) > 0.05 * fps_efectivo:
-                    fps_efectivo = 0.8 * fps_efectivo + 0.2 * fps_instante
-                    detector_actual.poner_fps(fps_efectivo)
+        # en segundos sigan midiendo tiempo de reloj. Se cuentan los analisis
+        # de los ultimos 2 s (antes se promediaba el fps de cada cuadro y en
+        # camara en vivo daba de mas: el reloj iba ~15 % lento)
+        if hora_cuadro_anterior is not None and hora_cuadro - hora_cuadro_anterior > 5.0:
+            horas_analisis.clear()  # hubo una pausa larga, se empieza de nuevo
         hora_cuadro_anterior = hora_cuadro
+        horas_analisis.append(hora_cuadro)
+        while horas_analisis[-1] - horas_analisis[0] > 2.0:
+            horas_analisis.popleft()
+        if len(horas_analisis) >= 5:
+            fps_efectivo = (len(horas_analisis) - 1) / (horas_analisis[-1] - horas_analisis[0])
+            detector_actual.poner_fps(fps_efectivo)
 
         try:
             hay_alarma = detector_actual.detectar(cuadro)
@@ -497,10 +633,13 @@ def bucle_deteccion(ejecucion):
                 "cuadro": cuadros_capturados,
                 "fps": round(fps_captura_medido, 1),
                 "camara_activa": camara_activa,
-                "fuente": str(fuente),
+                "fuente": str(_ocultar_contrasena(fuente)),
                 "modo": modo_deteccion,
                 "modo_app": MODO,
                 "marca_tiempo": datetime.now().isoformat(),
+                # cambia cada que hay alarma nueva; el panel recarga las alertas
+                # en ese momento (antes solo cada 3 s)
+                "ultima_alerta": hora_ultima_alerta,
             }
 
             if MODO_PRUEBAS:
@@ -606,8 +745,19 @@ async def inicio():
 
 
 def _buscar_camaras():
-    """Revisa /dev/video* y prueba cuales abren con OpenCV."""
+    """Revisa /dev/video* (Linux) o las camaras 0-3 (Windows) y prueba cuales abren."""
     dispositivos = []
+    if sys.platform == "win32":
+        # en Windows no hay /dev, se prueban los primeros numeros
+        for indice in range(4):
+            if _probar_camara(indice):
+                dispositivos.append({
+                    "indice": indice,
+                    "ruta": str(indice),
+                    "nombre": f"Cámara {indice}",
+                    "disponible": True,
+                })
+        return dispositivos
     if sys.platform.startswith("linux") and os.path.isdir("/dev"):
         videos = [d for d in os.listdir("/dev") if d.startswith("video")]
         if not videos:
@@ -637,7 +787,10 @@ def _buscar_camaras():
 def _probar_camara(indice):
     """Abre la camara y trata de leer hasta 6 cuadros (algunas tardan en arrancar)."""
     try:
-        c = cv2.VideoCapture(indice)
+        if sys.platform == "win32":
+            c = cv2.VideoCapture(indice, cv2.CAP_DSHOW)
+        else:
+            c = cv2.VideoCapture(indice)
         if not c.isOpened():
             c.release()
             return False
@@ -687,7 +840,7 @@ async def obtener_camaras():
         with candado_cuadro:
             escaneando_camaras = False
     return {
-        "fuente_actual": config_actual.get("FUENTE_CAMARA", 0),
+        "fuente_actual": _ocultar_contrasena(config_actual.get("FUENTE_CAMARA", 0)),
         "dispositivos": dispositivos,
         "videos": videos,
     }
@@ -735,6 +888,9 @@ def _resolver_fuente(fuente):
     """Convierte la fuente en algo que abra OpenCV: numero de camara o ruta del video."""
     if isinstance(fuente, str):
         s = fuente.strip()
+        # camara IP: OpenCV la abre directo con la direccion
+        if _es_url(s):
+            return s
         # ruta completa
         if s.startswith('/') or ('\\' in s):
             return s if os.path.exists(s) else None
@@ -776,13 +932,13 @@ def _cuadro_vista_previa():
     if escaneando_camaras:
         # no se toca la webcam mientras se buscan camaras
         camara_activa = False
-        return _imagen_aviso("Detectando cámaras...", 150, 0.8)
+        return _imagen_aviso("Detectando camaras...", 150, 0.8)
 
     if en_marcha:
         # con la vigilancia prendida la camara es del hilo de captura, aqui no
         # se lee para no robarle cuadros
         camara_activa = False
-        return _imagen_aviso("Iniciando cámara...", 150, 0.8)
+        return _imagen_aviso("Iniciando camara...", 150, 0.8)
 
     if not captura_vista_previa or not captura_vista_previa.isOpened():
         fuente = _resolver_fuente(config_actual.get("FUENTE_CAMARA", 0))
@@ -794,10 +950,7 @@ def _cuadro_vista_previa():
                     captura_vista_previa.release()
             except Exception:
                 pass
-            try:
-                captura_vista_previa = cv2.VideoCapture(fuente)
-            except Exception:
-                captura_vista_previa = None
+            captura_vista_previa = _abrir_captura(fuente)
 
     if captura_vista_previa and captura_vista_previa.isOpened():
         ok, cuadro = captura_vista_previa.read()
@@ -807,7 +960,10 @@ def _cuadro_vista_previa():
         # si es video y ya se acabo se reinicia (rebobinar a veces falla
         # sin avisar y se congela la vista previa)
         fuente = _resolver_fuente(config_actual.get("FUENTE_CAMARA", 0))
-        if isinstance(fuente, str):
+        if _es_url(fuente):
+            # camara IP sin imagen: se cierra y en la siguiente peticion se reabre
+            _cerrar_vista_previa()
+        elif isinstance(fuente, str):
             try:
                 captura_vista_previa.set(cv2.CAP_PROP_POS_FRAMES, 0)
                 ok, cuadro = captura_vista_previa.read()
@@ -822,7 +978,7 @@ def _cuadro_vista_previa():
             except Exception:
                 pass
             try:
-                captura_vista_previa = cv2.VideoCapture(fuente)
+                captura_vista_previa = _abrir_captura(fuente)
             except Exception:
                 captura_vista_previa = None
             if captura_vista_previa and captura_vista_previa.isOpened():
@@ -832,7 +988,7 @@ def _cuadro_vista_previa():
                     return cv2.resize(cuadro, (640, 480))
 
     camara_activa = False
-    return _imagen_aviso("Cámara no disponible", 140, 0.9)
+    return _imagen_aviso("Camara no disponible", 140, 0.9)
 
 
 def _cerrar_vista_previa():
@@ -873,6 +1029,10 @@ async def control(peticion: PeticionControl):
     if peticion.accion == "iniciar":
         if not en_marcha:
             en_marcha = True
+            # la vista previa tenia la webcam agarrada y V4L2 solo deja abrirla
+            # una vez: si no se suelta, la vigilancia no la abre y se apaga sola
+            with candado_cuadro:
+                _cerrar_vista_previa()
             ultimo_cuadro = None
             ultimo_estado = {}
             _vaciar_cola_deteccion()
@@ -905,10 +1065,14 @@ async def obtener_estado():
 
 @aplicacion.get("/configuracion")
 async def obtener_configuracion():
+    # la contrasena de la camara IP nunca se manda al panel
+    cfg = dict(config_actual)
+    cfg["FUENTE_CAMARA"] = _ocultar_contrasena(cfg.get("FUENTE_CAMARA", 0))
+    cfg.pop("ULTIMA_CAMARA_IP", None)
     if MODO_PRUEBAS:
-        return config_actual
+        return cfg
     # la app final no ve la cuenta que manda los correos (ni su contrasena)
-    return {k: v for k, v in config_actual.items() if k not in CLAVES_REMITENTE and k != "CORREO_TOKEN"}
+    return {k: v for k, v in cfg.items() if k not in CLAVES_REMITENTE and k != "CORREO_TOKEN"}
 
 
 @aplicacion.post("/configuracion")
@@ -925,7 +1089,16 @@ async def cambiar_configuracion(cambio: CambioConfiguracion):
     # si el video esta dentro del backend se guarda la ruta corta (el
     # AppImage se monta en /tmp distinto cada vez)
     fuente = cfg.get("FUENTE_CAMARA")
-    if isinstance(fuente, str):
+    cfg.pop("ULTIMA_CAMARA_IP", None)  # esa solo la escribe el servidor
+    if _es_url(fuente):
+        # si regreso con **** se queda la contrasena que ya estaba guardada
+        fuente = _restaurar_contrasena(fuente.strip(), fuente_anterior,
+                                       config_actual.get("ULTIMA_CAMARA_IP", ""))
+        if (":" + OCULTO + "@") in fuente:
+            raise HTTPException(status_code=400, detail="Escribe la contraseña de la cámara IP")
+        cfg["FUENTE_CAMARA"] = fuente
+        cfg["ULTIMA_CAMARA_IP"] = fuente
+    elif isinstance(fuente, str):
         cfg["FUENTE_CAMARA"] = _acortar_ruta_video(fuente)
     # se mezcla con lo que ya habia: el formulario no manda las zonas y antes
     # al reemplazar todo se borraban

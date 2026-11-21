@@ -24,6 +24,20 @@ manda una alerta por correo con la foto.
 
 Necesita internet la primera vez.
 
+## Programa (Windows)
+
+Necesita Windows 10/11 y [Python 3.12](https://www.python.org/downloads/)
+(marca *Add python.exe to PATH*).
+
+1. Descarga `SafeHome-windows.zip` de **Releases** (o de la pestaña
+   **Actions → Compilar Windows → Artifacts**) y descomprímelo.
+2. Doble clic en `instalar.bat` (solo la primera vez).
+3. Ábrelo con el acceso directo **SafeHome** del escritorio.
+
+Para compilarlo tú mismo en Windows: instala [Rust](https://rustup.rs) y
+Visual Studio Build Tools (*Desarrollo de escritorio con C++*) y corre
+`windows\compilar.bat`. Deja todo en `windows\SafeHome-windows\`.
+
 ---
 
 ## Código

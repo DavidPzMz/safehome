@@ -41,7 +41,13 @@ function ponerTextoEstado(texto) {
 }
 
 // pinta en el panel lo que manda el servidor (persona, cerradura, trepar...)
+let ultimaAlertaVista = 0;
 function actualizarEstado(datos) {
+    // hubo alarma nueva: se traen las alertas de una vez (no esperar los 3 s)
+    if (datos.ultima_alerta && datos.ultima_alerta !== ultimaAlertaVista) {
+        ultimaAlertaVista = datos.ultima_alerta;
+        cargarAlertas();
+    }
     const mapa = {
         // si hay varias personas se pone cuantas, ej. "SI (3)"
         estPersona: {
@@ -239,10 +245,10 @@ function grupoCamaras(dispositivos) {
 // grupo con la opcion de escribir la ruta de un video a mano
 function grupoRutaVideo() {
     const grupo = document.createElement('optgroup');
-    grupo.label = 'Archivo de vídeo';
+    grupo.label = 'Cámara IP / archivo de vídeo';
     const opcion = document.createElement('option');
     opcion.value = '__ruta__';
-    opcion.textContent = '✎ Usar archivo de vídeo (escribe ruta/archivo abajo)';
+    opcion.textContent = '✎ Cámara IP o archivo de vídeo (escríbelo abajo)';
     grupo.appendChild(opcion);
     return grupo;
 }
@@ -568,11 +574,25 @@ function prepararLienzoZonas() {
                 ctx.strokeRect(x, y, w, h);
                 escribirTexto(nombre, x + 4, y + 4, color);
             } else if (z.x2 !== undefined) {
-                // cerraduras y puertas vienen como esquinas x1, y1, x2, y2
-                const x = z.x1 * escalaX, y = z.y1 * escalaY, w = (z.x2 - z.x1) * escalaX, h = (z.y2 - z.y1) * escalaY;
-                ctx.fillRect(x, y, w, h);
-                ctx.strokeRect(x, y, w, h);
-                escribirTexto(nombre, x + 4, y + 4, color);
+                // cerraduras y puertas: 4 esquinas (si se movieron) o recuadro x1, y1, x2, y2
+                const pts = esquinasZona(z);
+                ctx.beginPath();
+                pts.forEach(([px, py], i) => {
+                    if (i === 0) ctx.moveTo(px * escalaX, py * escalaY);
+                    else ctx.lineTo(px * escalaX, py * escalaY);
+                });
+                ctx.closePath();
+                ctx.fill();
+                ctx.stroke();
+                escribirTexto(nombre, z.x1 * escalaX + 4, z.y1 * escalaY + 4, color);
+                // cuadritos en las esquinas para poder arrastrarlas
+                ctx.fillStyle = color;
+                pts.forEach(([px, py]) => {
+                    ctx.fillRect(px * escalaX - TAM_ESQUINA / 2, py * escalaY - TAM_ESQUINA / 2, TAM_ESQUINA, TAM_ESQUINA);
+                    ctx.strokeStyle = '#000000';
+                    ctx.lineWidth = 1;
+                    ctx.strokeRect(px * escalaX - TAM_ESQUINA / 2, py * escalaY - TAM_ESQUINA / 2, TAM_ESQUINA, TAM_ESQUINA);
+                });
             }
         }
 
@@ -602,6 +622,41 @@ function prepararLienzoZonas() {
         }
     }
 
+    // Las cerraduras y puertas se pueden ajustar a una camara inclinada
+    // arrastrando sus esquinas. Si nunca se movieron solo tienen x1..y2.
+    const TAM_ESQUINA = 9;
+    let arrastreEsquina = null;  // { zona, indice }
+
+    function esquinasZona(z) {
+        if (Array.isArray(z.puntos) && z.puntos.length === 4) return z.puntos;
+        return [[z.x1, z.y1], [z.x2, z.y1], [z.x2, z.y2], [z.x1, z.y2]];
+    }
+
+    // regresa la esquina (de cerradura o puerta) que esta bajo el mouse
+    function esquinaBajoMouse(p) {
+        if (!zonasVisibles) return null;
+        const tolerancia = 10 * 640 / lienzo.width;  // ~10 px en pantalla
+        const zonas = [...(zonasActuales.CERRADURAS || []), ...(zonasActuales.PUERTAS || [])];
+        for (const z of zonas) {
+            const pts = esquinasZona(z);
+            for (let i = 0; i < pts.length; i++) {
+                if (Math.abs(pts[i][0] - p.x) <= tolerancia && Math.abs(pts[i][1] - p.y) <= tolerancia) {
+                    return { zona: z, indice: i };
+                }
+            }
+        }
+        return null;
+    }
+
+    // mueve una esquina y vuelve a calcular el recuadro que envuelve la zona
+    function moverEsquina(z, indice, p) {
+        z.puntos = esquinasZona(z).map(q => [q[0], q[1]]);
+        z.puntos[indice] = [p.x, p.y];
+        const xs = z.puntos.map(q => q[0]), ys = z.puntos.map(q => q[1]);
+        z.x1 = Math.min(...xs); z.x2 = Math.max(...xs);
+        z.y1 = Math.min(...ys); z.y2 = Math.max(...ys);
+    }
+
     // pasa la posicion del mouse a coordenadas de 640x480
     function coordenadasMouse(e) {
         const rect = lienzo.getBoundingClientRect();
@@ -612,6 +667,12 @@ function prepararLienzoZonas() {
     }
 
     lienzo.onmousedown = (e) => {
+        // si se pica una esquina se arrastra esa esquina en lugar de dibujar
+        const esquina = esquinaBajoMouse(coordenadasMouse(e));
+        if (esquina) {
+            arrastreEsquina = esquina;
+            return;
+        }
         dibujandoZona = true;
         inicioZona = coordenadasMouse(e);
         finZona = { ...inicioZona };
@@ -619,6 +680,14 @@ function prepararLienzoZonas() {
     };
 
     lienzo.onmousemove = (e) => {
+        const p = coordenadasMouse(e);
+        if (arrastreEsquina) {
+            moverEsquina(arrastreEsquina.zona, arrastreEsquina.indice, p);
+            dibujarZonas();
+            return;
+        }
+        // manita sobre las esquinas para que se note que se pueden mover
+        lienzo.style.cursor = esquinaBajoMouse(p) ? 'grab' : 'crosshair';
         if (dibujandoZona) {
             finZona = coordenadasMouse(e);
             dibujarZonas();
@@ -627,6 +696,11 @@ function prepararLienzoZonas() {
 
     // al soltar el mouse se guarda la zona del tipo que este escogido
     lienzo.onmouseup = () => {
+        if (arrastreEsquina) {
+            arrastreEsquina = null;
+            dibujarZonas();
+            return;
+        }
         if (dibujandoZona && inicioZona && finZona &&
             Math.abs(finZona.x - inicioZona.x) > 10 &&
             Math.abs(finZona.y - inicioZona.y) > 10) {
@@ -660,7 +734,7 @@ function prepararLienzoZonas() {
     window.addEventListener('resize', ajustarTamano);
     ajustarTamano();
 
-    $('btnAgregarZona').onclick = () => mostrarAviso('Dibuja un rectángulo en el lienzo arrastrando el mouse', 'info');
+    $('btnAgregarZona').onclick = () => mostrarAviso('Dibuja un rectángulo arrastrando el mouse; luego arrastra sus esquinas para ajustarlo si la cámara está inclinada', 'info');
 
     // borra la ultima zona del tipo escogido
     $('btnBorrarZona').onclick = () => {

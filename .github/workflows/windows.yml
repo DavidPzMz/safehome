@@ -1,0 +1,44 @@
+# Compila SafeHome para Windows en los servidores de GitHub.
+# Se lanza a mano desde la pestaña Actions ("Run workflow") o al publicar un tag v*.
+# El resultado (SafeHome-windows.zip) queda en el apartado "Artifacts" de la ejecucion
+# y, si fue por un tag, tambien se pega al Release.
+name: Compilar Windows
+
+on:
+  workflow_dispatch:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - name: Compilar y armar la carpeta
+        shell: cmd
+        run: windows\compilar.bat
+
+      - name: Comprimir
+        shell: pwsh
+        run: Compress-Archive -Path windows\SafeHome-windows -DestinationPath SafeHome-windows.zip
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: SafeHome-windows
+          path: SafeHome-windows.zip
+
+      - name: Subir al Release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: SafeHome-windows.zip

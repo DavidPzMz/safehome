@@ -35,3 +35,6 @@ Thumbs.db
 *.pt
 python-backend/videos/
 evaluacion/
+
+# Carpeta que arma windows/compilar.bat
+windows/SafeHome-windows/

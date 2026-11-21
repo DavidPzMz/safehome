@@ -15,6 +15,25 @@ from config import (
 import config as _cfg
 
 
+def _poligono(zona):
+    """Las 4 esquinas de la zona si se ajusto a una camara inclinada, si no None.
+
+    Las zonas guardan siempre x1, y1, x2, y2 (el recuadro que las envuelve) y
+    ademas "puntos" cuando se movieron las esquinas en el editor.
+    """
+    puntos = zona.get("puntos") if isinstance(zona, dict) else None
+    if not puntos or len(puntos) < 3:
+        return None
+    try:
+        return np.array([[int(p[0]), int(p[1])] for p in puntos], dtype=np.int32)
+    except (TypeError, ValueError, IndexError):
+        return None
+
+
+# el modelo YOLO se carga una sola vez y se reusa al volver a iniciar
+_MODELO_YOLO = None
+
+
 class DetectorPersonas:
     """Aqui esta toda la logica: busca a la persona y decide si hace algo sospechoso.
 
@@ -119,11 +138,18 @@ class DetectorPersonas:
         if MODO_DETECCION != "cascada":
             print(f"Modo: {MODO_DETECCION} (solo HOG)")
             return
+        global _MODELO_YOLO
+        if _MODELO_YOLO is not None:
+            # ya se habia cargado en otra vigilancia: se reusa (cargarlo tarda ~4 s)
+            self.modelo = _MODELO_YOLO
+            self.modelo_cargado = True
+            return
         try:
             from ultralytics import YOLO
             print("Cargando modelo YOLO-pose...")
             self.modelo = YOLO('yolov8n-pose.pt')
             self.modelo_cargado = True
+            _MODELO_YOLO = self.modelo
             print("Modelo YOLO-pose cargado correctamente")
         except ImportError:
             print("⚠️ ultralytics no instalado. Solo se usara deteccion HOG.")
@@ -150,7 +176,12 @@ class DetectorPersonas:
     def dibujar_zonas(self, cuadro, zonas, color, prefijo):
         # pinta los recuadros de cerraduras o puertas con su numero
         for i, zona in enumerate(zonas):
-            cv2.rectangle(cuadro, (zona["x1"], zona["y1"]), (zona["x2"], zona["y2"]), color, 2)
+            poligono = _poligono(zona)
+            if poligono is not None:
+                # zona de 4 esquinas (camara inclinada)
+                cv2.polylines(cuadro, [poligono], True, color, 2)
+            else:
+                cv2.rectangle(cuadro, (zona["x1"], zona["y1"]), (zona["x2"], zona["y2"]), color, 2)
             cv2.putText(cuadro, f"{prefijo} {i+1}", (zona["x1"], zona["y1"] - 10),
                         cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 1)
 
@@ -200,12 +231,21 @@ class DetectorPersonas:
         return False, []
 
     def _punto_en_zona(self, x, y, zona):
-        # checa si el punto cae dentro del recuadro
+        # checa si el punto cae dentro de la zona (recuadro o 4 esquinas)
+        poligono = _poligono(zona)
+        if poligono is not None:
+            return cv2.pointPolygonTest(poligono, (float(x), float(y)), False) > 0
         return zona["x1"] < x < zona["x2"] and zona["y1"] < y < zona["y2"]
 
     def _cerca_de_puerta(self, x, y, margen=30):
         """Checa si el punto esta dentro o cerquita de alguna puerta."""
         for puerta in self.puertas:
+            poligono = _poligono(puerta)
+            if poligono is not None:
+                # distancia al borde: positiva adentro, negativa afuera
+                if cv2.pointPolygonTest(poligono, (float(x), float(y)), True) > -margen:
+                    return True
+                continue
             px1 = puerta["x1"] - margen
             py1 = puerta["y1"] - margen
             px2 = puerta["x2"] + margen
@@ -264,8 +304,29 @@ class DetectorPersonas:
         pies_antes = sum(s[4] for s in antiguas) / 2.0
         pies_ahora = sum(s[4] for s in recientes) / 2.0
 
+        # Umbrales: en pixeles fijos (version original) o proporcionales al
+        # torso de la persona, para que no dependan de la distancia/resolucion
+        sube_cadera_min = TREPAR_SUBIDA_CADERA_PX
+        sube_pies_min = TREPAR_SUBIDA_PIES_PX
+        manos_min = TREPAR_MANOS_ARRIBA_PX
+        margen = TREPAR_MARGEN_PUERTA_PX
+        torso_ref = 0
+        if getattr(_cfg, "TREPAR_PROPORCIONAL", False):
+            # el torso se toma de la primera mitad de la ventana (antes de
+            # subir), porque al inclinarse sobre la barda se ve mas corto
+            mitad = self.historial_cuerpo[:max(2, len(self.historial_cuerpo) // 2)]
+            torsos = sorted(s[6] for s in mitad if len(s) > 6 and s[6] > 0)
+            torso_ref = torsos[len(torsos) // 2] if torsos else 0
+            if torso_ref >= getattr(_cfg, "TREPAR_TORSO_MIN_PX", 15):
+                sube_cadera_min = _cfg.TREPAR_SUBIDA_CADERA_TORSOS * torso_ref
+                sube_pies_min = _cfg.TREPAR_SUBIDA_PIES_TORSOS * torso_ref
+                manos_min = _cfg.TREPAR_MANOS_ARRIBA_TORSOS * torso_ref
+                margen = _cfg.TREPAR_MARGEN_PUERTA_TORSOS * torso_ref
+            elif not getattr(_cfg, "TREPAR_TORSO_CHICO_USA_PX", True):
+                return False  # pose muy chica, no es confiable
+
         cerca_puerta = self._cerca_de_puerta(recientes[-1][3], cadera_ahora,
-                                             margen=TREPAR_MARGEN_PUERTA_PX)
+                                             margen=margen)
         manos_max = max(s[5] for s in self.historial_cuerpo)
         self.metricas_trepar = {
             "muestras": len(self.historial_cuerpo),
@@ -273,6 +334,7 @@ class DetectorPersonas:
             "sube_pies": round(pies_antes - pies_ahora),
             "manos_max": round(manos_max),
             "cerca_puerta": bool(cerca_puerta),
+            "torso": round(torso_ref),
         }
         if not cerca_puerta:
             return False
@@ -280,9 +342,9 @@ class DetectorPersonas:
         # Los pies tambien tienen que subir: caminar hacia la camara sube la
         # cadera en la imagen pero los pies siguen abajo. Alejarse sube cadera
         # y pies, pero el que trepa ademas levanta las manos para agarrarse.
-        return (cadera_antes - cadera_ahora >= TREPAR_SUBIDA_CADERA_PX and
-                pies_antes - pies_ahora >= TREPAR_SUBIDA_PIES_PX and
-                manos_max >= TREPAR_MANOS_ARRIBA_PX)
+        return (cadera_antes - cadera_ahora >= sube_cadera_min and
+                pies_antes - pies_ahora >= sube_pies_min and
+                manos_max >= manos_min)
 
     def _reiniciar_mirar(self):
         # borra todo lo de "mirando alrededor" para empezar de cero
@@ -694,9 +756,12 @@ class DetectorPersonas:
                     # (positivo = manos arriba, agarrandose para subir)
                     ys_munecas = [y for y in (y_muneca_izq, y_muneca_der) if y > 0]
                     manos_arriba = (y_cadera_prom - min(ys_munecas)) if ys_munecas else 0
+                    # largo del torso (hombros -> cadera) para medir en "torsos"
+                    ys_hombros = [y for y in (y_hombro_izq, y_hombro_der) if y > 0]
+                    torso = (y_cadera_prom - sum(ys_hombros) / len(ys_hombros)) if ys_hombros else 0
                     self.historial_cuerpo.append(
                         (self.num_cuadro, y_nariz, y_cadera_prom,
-                         x_nariz, y_pies, manos_arriba)
+                         x_nariz, y_pies, manos_arriba, torso)
                     )
                     self._recortar_historial_cuerpo()
                     if self._cuerpo_trepando():

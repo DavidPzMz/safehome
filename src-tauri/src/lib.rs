@@ -63,17 +63,20 @@ fn carpeta_servidor_python(aplicacion: &AppHandle) -> PathBuf {
 
 // usa el Python del entorno virtual (.venv) si existe, si no el del sistema
 fn ejecutable_python(carpeta: &PathBuf) -> PathBuf {
+    // en Windows el venv guarda el python en Scripts\python.exe
     #[cfg(target_os = "windows")]
-    let nombre_ejecutable = "python.exe";
+    let python_venv = carpeta.join(".venv").join("Scripts").join("python.exe");
     #[cfg(not(target_os = "windows"))]
-    let nombre_ejecutable = "python";
+    let python_venv = carpeta.join(".venv").join("bin").join("python");
 
-    let python_venv = carpeta.join(".venv").join("bin").join(nombre_ejecutable);
     if python_venv.exists() {
         return python_venv;
     }
 
-    PathBuf::from("python3")
+    #[cfg(target_os = "windows")]
+    return PathBuf::from("python");
+    #[cfg(not(target_os = "windows"))]
+    return PathBuf::from("python3");
 }
 
 // arranca el servidor de Python y espera a que conteste (hasta 10 s)
@@ -99,6 +102,22 @@ async fn iniciar_servidor_python(aplicacion: &AppHandle) -> Result<(), String> {
         .current_dir(&carpeta)
         .stdout(Stdio::inherit())
         .stderr(Stdio::inherit());
+
+    // En Windows: sin ventana negra de consola, archivos en UTF-8 y lo que
+    // imprime Python va a python-backend\logs\servidor.log
+    #[cfg(target_os = "windows")]
+    {
+        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+        comando.creation_flags(CREATE_NO_WINDOW);
+        comando.env("PYTHONUTF8", "1").env("PYTHONIOENCODING", "utf-8");
+        let carpeta_logs = carpeta.join("logs");
+        let _ = std::fs::create_dir_all(&carpeta_logs);
+        if let Ok(archivo) = std::fs::File::create(carpeta_logs.join("servidor.log")) {
+            if let Ok(copia) = archivo.try_clone() {
+                comando.stdout(Stdio::from(archivo)).stderr(Stdio::from(copia));
+            }
+        }
+    }
 
     let proceso = comando.spawn().map_err(|e| format!("Error al iniciar el proceso de Python: {}", e))?;
 
