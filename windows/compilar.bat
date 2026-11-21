@@ -19,6 +19,7 @@ cd /d "%RAIZ%\src-tauri"
 cargo build --release
 if errorlevel 1 (
     echo Error al compilar.
+    if defined CI exit /b 1
     pause
     exit /b 1
 )
@@ -35,6 +36,7 @@ rem el backend sin el entorno virtual, videos, logs ni caches
 robocopy "%RAIZ%\python-backend" "%SALIDA%\python-backend" /e /xd .venv venv videos logs __pycache__ evidencias /xf remitente.json *.pyc >nul
 if errorlevel 8 (
     echo Error copiando python-backend.
+    if defined CI exit /b 1
     pause
     exit /b 1
 )
